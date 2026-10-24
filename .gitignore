@@ -1,0 +1,7 @@
+node_modules/
+.wrangler/
+data-raw/
+data/*.sql
+.env
+.dev.vars
+.codex-pass.md

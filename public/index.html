@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TrueTonne: check a carbon-neutral claim</title>
+<meta name="description" content="Paste a company's carbon-offset claim. TrueTonne checks every claimed tonne against 495,403 public registry retirements and records it on-chain so one tonne cannot back two claims.">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="/"><svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="7" fill="var(--accent)"/><path d="M9 16.5l4.5 4.5L23 11.5" fill="none" stroke="var(--accent-ink)" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg>TrueTonne</a>
+    <nav class="nav" aria-label="Main">
+      <a href="/" aria-current="page">Check a claim</a>
+      <a href="/company.html">Company lookup</a>
+      <a href="/docs.html" class="hide-sm">Method &amp; data</a>
+      <a href="https://github.com/ibnweb3/truetonne" class="hide-sm">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+  <section class="hero">
+    <h1>Is every claimed tonne real?</h1>
+    <p class="lede">Paste a company's carbon-offset claim. TrueTonne checks each claimed tonne against public registry retirements, shows which ones back it, and records the result on-chain so the same tonne can't back two claims.</p>
+    <p class="stamp" id="stamp"><span>Registry data: <b>CarbonPlan OffsetsDB</b></span><span>Snapshot <b id="stamp-date">1 Jun 2026</b></span><span><b id="stamp-n">495,403</b> retirements</span><span>Verra · Gold Standard · ACR · CAR · ART</span></p>
+  </section>
+
+  <section class="section" aria-labelledby="samples-h">
+    <div class="section-head">
+      <h2 id="samples-h">Try a real case</h2>
+      <p class="hint">Each one loads real registry entries into the form below.</p>
+    </div>
+    <div class="samples" id="samples"></div>
+  </section>
+
+  <section class="section card" aria-labelledby="form-h">
+    <h2 id="form-h" class="card-pad" style="padding-bottom:0">Check a claim</h2>
+    <div class="tabs" role="tablist" aria-label="How to enter the claim" style="margin-top:12px">
+      <button class="tab" role="tab" id="tab-paste" aria-controls="pane-paste" aria-selected="true">Paste text</button>
+      <button class="tab" role="tab" id="tab-form" aria-controls="pane-form" aria-selected="false" tabindex="-1">Enter claims</button>
+    </div>
+
+    <div id="pane-paste" role="tabpanel" aria-labelledby="tab-paste" class="card-pad">
+      <form id="paste-form">
+        <div class="field">
+          <label for="paste">Claim text</label>
+          <textarea id="paste" name="paste" spellcheck="false" maxlength="6000" required
+            placeholder="Paste a paragraph from a sustainability report, press release or product page that says which carbon credits were retired."></textarea>
+        </div>
+        <div class="actions">
+          <button class="btn btn-primary" type="submit" id="extract-btn">Find the claims</button>
+          <span class="hint small">An AI model (Llama 3.3 on Cloudflare) reads the text. You review what it found before anything is checked.</span>
+        </div>
+        <div class="note warn" id="extract-msg" hidden style="margin-top:14px"></div>
+      </form>
+    </div>
+
+    <div id="pane-form" role="tabpanel" aria-labelledby="tab-form" class="card-pad" hidden>
+      <form id="check-form" novalidate>
+        <div class="row2">
+          <div class="field">
+            <label for="claimant">Who makes the claim?</label>
+            <input id="claimant" name="claimant" required minlength="3" maxlength="120" autocomplete="organization" spellcheck="false" placeholder="e.g. Spotify">
+          </div>
+          <div class="field">
+            <label for="aliases">Other names it uses <span class="hint">(optional, comma separated)</span></label>
+            <input id="aliases" name="aliases" maxlength="400" autocomplete="off" spellcheck="false" placeholder="e.g. Spotify AB, Spotify Technology">
+          </div>
+        </div>
+        <span class="label" id="claims-label">Claimed retirements</span>
+        <table class="claims" aria-labelledby="claims-label">
+          <thead><tr><th class="c-proj">Project ID or name</th><th>Vintage</th><th>Retired in</th><th>Tonnes CO₂e</th><th><span class="sr-only">Remove</span></th></tr></thead>
+          <tbody id="claim-rows"></tbody>
+        </table>
+        <p class="hint small" style="margin:2px 0 14px">Leave the project empty to check a company-wide total, e.g. "1.2 million tonnes retired in 2023".</p>
+        <div class="actions">
+          <button class="btn" type="button" id="add-row">Add a claim</button>
+          <button class="btn btn-primary" type="submit" id="check-btn">Run the check</button>
+        </div>
+        <div class="note bad" id="check-msg" role="alert" hidden style="margin-top:14px"></div>
+        <input type="hidden" id="source-text">
+      </form>
+    </div>
+  </section>
+
+  <section class="section" aria-labelledby="how-h">
+    <h2 id="how-h" style="margin-bottom:12px">How it works</h2>
+    <div class="steps">
+      <div class="card step"><span class="k">01 · Read</span><h3>Pull out the claims</h3><p>The AI step only extracts. Any project ID or tonne figure it returns that is not written in your text is dropped, and you see why.</p></div>
+      <div class="card step"><span class="k">02 · Match</span><h3>Match against the registry</h3><p>Each claim is matched to retirement records that name the claimant. A retired tonne can back only one claim, so overlaps show up as a gap.</p></div>
+      <div class="card step"><span class="k">03 · Record</span><h3>Lock the tonnes on-chain</h3><p>Recording the report on Base Sepolia gives each backing retirement to the claimant. If another party already holds those tonnes, the contract refuses and logs a blocked double claim.</p></div>
+    </div>
+  </section>
+</main>
+
+<footer class="foot">
+  <div class="wrap">
+    <span>TrueTonne checks paperwork, not project quality. Registry data © the registries, compiled by CarbonPlan OffsetsDB.</span>
+    <span><a href="/docs.html">Method, data and limits</a></span>
+  </div>
+</footer>
+<script type="module" src="/app.js"></script>
+</body>
+</html>

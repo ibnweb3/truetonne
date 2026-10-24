@@ -1,0 +1,12 @@
+{
+  "name": "truetonne",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": { "directory": "public", "binding": "ASSETS", "not_found_handling": "404-page", "run_worker_first": ["/api/*", "/r/*"] },
+  "d1_databases": [
+    { "binding": "DB", "database_name": "truetonne", "database_id": "85801420-8088-470c-aa94-9637a96c4f83" }
+  ],
+  "ai": { "binding": "AI" },
+  "observability": { "enabled": true }
+}
