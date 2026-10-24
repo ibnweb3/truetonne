@@ -12,6 +12,16 @@ const fail = (status, error, extra = {}) => json({ error, ...extra }, status);
 
 // Fixed-window limit per client IP, stored in D1. Returns true when the call is allowed.
 async function allow(env, req, bucket, max, windowSec) {
+  try {
+    return await allowUnsafe(env, req, bucket, max, windowSec);
+  } catch (e) {
+    // A broken limiter must not take the read-only checks down; on-chain writes stay closed.
+    console.error('rate limiter failed', e);
+    return !bucket.startsWith('anchor');
+  }
+}
+
+async function allowUnsafe(env, req, bucket, max, windowSec) {
   const ip = req.headers.get('cf-connecting-ip') || 'local';
   const k = `${bucket}:${ip}`;
   const now = Math.floor(Date.now() / 1000);
@@ -142,6 +152,7 @@ export default {
       return await handler(req, env, param);
     } catch (e) {
       console.error(e);
+      if (/row write limit/i.test(e.message || '')) return fail(503, 'This demo has used its free daily database quota, so new reports cannot be saved until midnight UTC. Existing reports still load.');
       return fail(e.message?.startsWith('Request') ? 400 : 500, e.message?.startsWith('Request') ? e.message : 'Something went wrong on our side. Please try again.');
     }
   },
