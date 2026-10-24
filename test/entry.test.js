@@ -123,7 +123,7 @@ async function setup({ search = '', draft = null, responses = {} } = {}) {
       calls.push({ path, body });
       let result = responses[path] ?? (path === '/api/dataset' ? { dataset } : undefined);
       if (result instanceof Error) throw result;
-      if (typeof result === 'function') result = result(body);
+      if (typeof result === 'function') result = await result(body, options);
       result ||= { id: 'ABCDEFGHIJKL' };
       return { ok: !result.status || result.status < 400, status: result.status || 200, json: async () => result };
     },
@@ -137,6 +137,7 @@ async function setup({ search = '', draft = null, responses = {} } = {}) {
 
 test('registry example creates a report with the reviewed values', async () => {
   const state = await setup();
+  assert.equal(state.document.querySelectorAll('.sample').length, 4);
   assert.equal(state.$('#check-btn').disabled, false);
   await state.$('.sample').click();
   assert.equal(state.$('#claimant').value, 'Spotify');
@@ -144,6 +145,58 @@ test('registry example creates a report with the reviewed values', async () => {
   await state.$('#check-form').trigger('submit');
   assert.equal(state.location.assigned, '/r/ABCDEFGHIJKL');
   assert.equal(state.calls.find((call) => call.path === '/api/check').body.claims[0].project_id, 'CAR1480');
+});
+
+test('loading an example allows the previous draft to be restored', async () => {
+  const state = await setup({ draft: { claimant: 'My company', aliases: ['Company trading name'], claims: [{ project_id: 'ACR123', tonnes: '45' }], paste: sourceText, source_text: sourceText, tab: 1 } });
+  await state.$('.sample').click();
+  assert.equal(state.$('#claimant').value, 'Spotify');
+  await state.$('#form-notice').querySelector('button').click();
+  assert.equal(state.$('#claimant').value, 'My company');
+  assert.equal(state.$('#aliases').value, 'Company trading name');
+  assert.equal(state.$('[name=project]').value, 'ACR123');
+  assert.equal(state.$('[name=tonnes]').value, '45');
+  assert.equal(state.$('#source-text').value, sourceText);
+  assert.equal(JSON.parse(state.storage.get(DRAFT_KEY)).claimant, 'My company');
+});
+
+test('clearing a form allows an accidental clear to be undone', async () => {
+  const state = await setup();
+  await state.$('.sample').click();
+  await state.$('#clear-form').click();
+  assert.equal(state.$('#claimant').value, '');
+  assert.equal(state.$('[name=project]').value, '');
+  await state.$('#form-notice').querySelector('button').click();
+  assert.equal(state.$('#claimant').value, 'Spotify');
+  assert.equal(state.$('[name=tonnes]').value, '95000');
+});
+
+test('editing pasted text updates the report source when returning to details', async () => {
+  const state = await setup({ draft: { claimant: 'Spotify', claims: [{ project_id: 'CAR1480', tonnes: '95000' }], paste: sourceText, source_text: sourceText, tab: 1 } });
+  await state.$('#edit-source').click();
+  assert.equal(state.$('#pane-paste').hidden, false);
+  const updatedSource = sourceText + ' Updated source passage.';
+  state.$('#paste').value = updatedSource;
+  await state.$('#paste').trigger('input');
+  await state.$('#tab-form').click();
+  assert.equal(state.$('#source-preview-text').textContent, updatedSource);
+  assert.match(state.$('#review-note').textContent, /source text changed/);
+  await state.$('#check-form').trigger('submit');
+  assert.equal(state.calls.find((call) => call.path === '/api/check').body.source_text, updatedSource);
+});
+
+test('removing source text preserves claim details and supports undo', async () => {
+  const state = await setup({ draft: { claimant: 'Spotify', claims: [{ project_id: 'CAR1480', tonnes: '95000' }], paste: sourceText, source_text: sourceText, tab: 1 } });
+  await state.$('#remove-source').click();
+  assert.equal(state.$('#claimant').value, 'Spotify');
+  assert.equal(state.$('#source-preview').hidden, true);
+  assert.equal(state.$('#source-text').value, '');
+  assert.equal(state.$('#paste').value, '');
+  await state.$('#form-notice').querySelector('button').click();
+  assert.equal(state.$('#source-text').value, sourceText);
+  await state.$('#remove-source').click();
+  await state.$('#check-form').trigger('submit');
+  assert.equal(state.calls.find((call) => call.path === '/api/check').body.source_text, undefined);
 });
 
 test('failed report creation preserves inputs and allows correction', async () => {
@@ -179,6 +232,45 @@ test('reviewing a report restores its original inputs and unlocks the form', asy
   assert.equal(state.$('[name=project]').value, 'CAR1335');
   assert.equal(state.$('#check-btn').disabled, false);
   assert.match(state.$('#form-notice').textContent, /Changes create a new report/);
+});
+
+test('loading report inputs allows the existing draft to be recovered', async () => {
+  const state = await setup({ search: '?edit=ABCDEFGHIJKL', draft: { claimant: 'My unsaved company', claims: [{ project_id: 'ACR123', tonnes: '45' }], tab: 1 }, responses: { '/api/report/ABCDEFGHIJKL': { report: { claimant: 'Kinaxis', claims: [{ input: { project_id: 'CAR1335', tonnes: 5000 } }] } } } });
+  assert.equal(state.$('#claimant').value, 'Kinaxis');
+  await state.$('#form-notice').querySelector('button').click();
+  assert.equal(state.$('#claimant').value, 'My unsaved company');
+  assert.equal(state.$('[name=project]').value, 'ACR123');
+  assert.equal(state.$('[name=tonnes]').value, '45');
+  assert.equal(state.$('#form-notice').getAttribute('tabindex'), '-1');
+  assert.equal(state.document.activeElement, state.$('#form-notice'));
+});
+
+test('unreadable saved report inputs never partially overwrite an existing draft', async () => {
+  const validReport = { claimant: 'New company', claims: [{ input: { project_id: 'CAR1335', tonnes: 5000 } }] };
+  for (const invalidReport of [
+    { ...validReport, aliases: 'not an array' },
+    { ...validReport, claims: [{ input: null }] },
+    { ...validReport, claims: [{ input: {} }] },
+    { ...validReport, claims: [{ input: { project_id: { value: 'CAR1335' } } }] },
+    { ...validReport, source_text: { text: 'not source text' } },
+    { ...validReport, claims: [] },
+  ]) {
+    const state = await setup({ search: '?edit=ABCDEFGHIJKL', draft: { claimant: 'Keep this draft', aliases: ['Keep alias'], claims: [{ project_id: 'ACR123', tonnes: '45' }], source_text: sourceText, paste: sourceText, tab: 1 }, responses: { '/api/report/ABCDEFGHIJKL': { report: invalidReport } } });
+    assert.match(state.$('#form-notice').textContent, /no readable claim inputs/);
+    assert.equal(state.$('#claimant').value, 'Keep this draft');
+    assert.equal(state.$('#aliases').value, 'Keep alias');
+    assert.equal(state.$('[name=project]').value, 'ACR123');
+    assert.equal(state.$('#source-text').value, sourceText);
+    assert.equal(state.$('#check-btn').disabled, false);
+  }
+});
+
+test('malformed session rows do not leave a partially restored form', async () => {
+  const state = await setup({ draft: { claimant: 'Broken draft', claims: [null], tab: 1 } });
+  assert.equal(state.$('#claimant').value, '');
+  assert.equal(state.$('#claim-rows').children.length, 1);
+  assert.equal(state.$('[name=project]').value, '');
+  assert.equal(state.$('#check-btn').disabled, false);
 });
 
 test('company lookup links preserve the company and its aliases', async () => {
@@ -220,6 +312,27 @@ test('AI suggestions are reviewed before any registry check', async () => {
   assert.equal(state.calls.some((call) => call.path === '/api/check'), false);
 });
 
+test('a slow AI request can be cancelled without losing the text or locking controls', async () => {
+  const state = await setup({ responses: {
+    '/api/extract': (_body, options) => new Promise((_resolve, reject) => {
+      options.signal.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })), { once: true });
+    }),
+  } });
+  state.$('#paste').value = sourceText;
+  const submission = state.$('#paste-form').trigger('submit');
+  assert.equal(state.$('#extract-cancel').hidden, false);
+  assert.equal(state.$('#paste').disabled, true);
+  await state.$('#extract-cancel').click();
+  await submission;
+  assert.match(state.$('#extract-msg').textContent, /Request cancelled/);
+  assert.equal(state.$('#extract-cancel').hidden, true);
+  assert.equal(state.$('#paste').disabled, false);
+  assert.equal(state.$('#paste').value, sourceText);
+  await state.$('#extract-msg').querySelector('button').click();
+  assert.equal(state.$('#pane-form').hidden, false);
+  assert.equal(state.$('#source-text').value, sourceText);
+});
+
 test('claim row limit and removal keep controls and accessible labels in sync', async () => {
   const state = await setup();
   for (let i = 0; i < 15; i++) await state.$('#add-row').click();
@@ -240,6 +353,27 @@ test('unavailable registry data prevents report creation and offers a working re
   await state.$('#dataset-retry').click();
   assert.equal(state.$('#check-btn').disabled, false);
   assert.equal(state.$('#dataset-retry').hidden, true);
+});
+
+test('invalid registry metadata stays unavailable and can be retried', async () => {
+  for (const invalidDataset of [
+    { ...dataset, generated_at: 20260601 },
+    { ...dataset, generated_at: 'not a date' },
+    { ...dataset, generated_at: '2026-02-30' },
+    { ...dataset, retirements: '495403' },
+    { ...dataset, retirements: 4.5 },
+    { ...dataset, source: '' },
+  ]) {
+    let attempts = 0;
+    const state = await setup({ responses: { '/api/dataset': () => ({ dataset: ++attempts === 1 ? invalidDataset : { ...dataset, generated_at: '2026-06-01T20:33:13.820968+00:00' } }) } });
+    assert.equal(state.$('#check-btn').disabled, true);
+    assert.equal(state.$('#dataset-retry').hidden, false);
+    assert.match(state.$('#stamp').textContent, /Registry data is unavailable/);
+    await state.$('#dataset-retry').click();
+    assert.equal(state.$('#check-btn').disabled, false);
+    assert.equal(state.$('#dataset-retry').hidden, true);
+    assert.match(state.$('#stamp').textContent, /1 Jun 2026/);
+  }
 });
 
 test('missing edit reports preserve an existing draft and release controls', async () => {

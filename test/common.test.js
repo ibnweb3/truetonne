@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { api, day, registryName } from '../public/common.js';
+import { api, day, registryName, n, t } from '../public/common.js';
 
 async function withFetch(mock, run) {
   const original = globalThis.fetch;
@@ -28,11 +28,37 @@ test('failed connections have an actionable consumer message', async () => {
   });
 });
 
+test('array payloads cannot masquerade as a successful API object', async () => {
+  await withFetch(async () => Response.json([]), async () => {
+    await assert.rejects(api('/api/dataset'), /unreadable response/);
+  });
+});
+
+test('missing or invalid totals stay readable and never render NaN or Infinity', () => {
+  for (const value of [null, undefined, NaN, Infinity, -Infinity, '5000']) {
+    assert.equal(t(value), 'Not recorded');
+    assert.equal(n(value), 'Not recorded');
+  }
+  assert.equal(t(0), '0 t');
+  assert.equal(t(0.001), '0.001 t');
+  assert.equal(n(5000), '5,000');
+});
+
 test('a stalled request times out instead of leaving its action pending forever', async () => {
   await withFetch((path, { signal }) => new Promise((resolve, reject) => {
     signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true });
   }), async () => {
     await assert.rejects(api('/api/company?name=Example', { timeout: 5 }), /taking too long/);
+  });
+});
+
+test('cancellation while reading a response body stays a cancellation', async () => {
+  const controller = new AbortController();
+  await withFetch(async () => ({ ok: true, status: 200, json: async () => {
+    controller.abort();
+    throw new DOMException('Aborted', 'AbortError');
+  } }), async () => {
+    await assert.rejects(api('/api/extract', { signal: controller.signal }), /Request cancelled/);
   });
 });
 

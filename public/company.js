@@ -12,10 +12,20 @@ function claimLink(name, aliases) {
   return `/?${q}`;
 }
 
-function show(profile, aliases) {
+function show(profile, aliases, permalink) {
+  const nonnegative = (value) => Number.isFinite(value) && value >= 0;
+  const text = (value) => typeof value === 'string' && value.trim().length > 0;
   if (!profile || typeof profile.name !== 'string' || !profile.name.trim()
-      || !Number.isFinite(profile.retirements) || !Number.isFinite(profile.tonnes)
-      || !Array.isArray(profile.by_year) || !Array.isArray(profile.top_projects)) {
+      || !Number.isInteger(profile.retirements) || profile.retirements < 0 || !nonnegative(profile.tonnes)
+      || !Array.isArray(profile.by_year) || !Array.isArray(profile.top_projects)
+      || profile.by_year.some((year) => !year || !/^(?:\d{4}|unknown)$/.test(year.year) || !nonnegative(year.tonnes))
+      || profile.top_projects.some((project) => !project || !text(project.id) || !nonnegative(project.tonnes))
+      || (profile.variants !== undefined && (!Array.isArray(profile.variants) || !profile.variants.every(text)))
+      || (profile.matched_on !== undefined && (!profile.matched_on || typeof profile.matched_on !== 'object'
+        || Array.isArray(profile.matched_on) || Object.values(profile.matched_on).some((count) => !Number.isInteger(count) || count < 0)))
+      || !profile.dataset || !text(profile.dataset.source) || !text(profile.dataset.generated_at)
+      || day(profile.dataset.generated_at) === 'Date not recorded'
+      || (profile.retirements === 0 && (profile.tonnes !== 0 || profile.by_year.length || profile.top_projects.length))) {
     throw new Error('The lookup returned an incomplete response. Please try again.');
   }
   const p = profile;
@@ -26,7 +36,7 @@ function show(profile, aliases) {
   out.replaceChildren(...[
     h('section', { class: 'section', 'aria-labelledby': 'results-h' },
       h('div', { class: 'section-head' }, heading,
-        h('a', { href: location.pathname + location.search }, 'Link to this lookup')),
+        h('a', { href: permalink }, 'Link to this lookup')),
       p.dataset?.generated_at ? h('p', { class: 'hint', style: 'margin-bottom:16px' }, `${p.dataset.source || 'Registry'} snapshot: ${day(p.dataset.generated_at)}. This is historical data, not a live registry search.`) : null,
       p.retirements ? h('div', { class: 'figures card card-pad' },
         h('div', {}, h('div', { class: 'k' }, 'Matching retirement records'), h('div', { class: 'v' }, count)),
@@ -46,14 +56,14 @@ function show(profile, aliases) {
     p.retirements && p.by_year.length ? h('section', { class: 'section card card-pad', 'aria-labelledby': 'years-h' },
       h('h2', { id: 'years-h' }, 'Retirements by year'),
       h('p', { class: 'hint', style: 'margin:8px 0 14px' }, 'Grouped by the date credits were retired, not their vintage.'),
-      h('div', { class: 'table-wrap' }, h('table', { class: 'data' },
+      h('div', { class: 'table-wrap', tabindex: '0', role: 'region', 'aria-labelledby': 'years-h' }, h('table', { class: 'data' },
         h('caption', { class: 'sr-only' }, `Tonnes in matching retirement records for ${p.name}, by retirement year`),
         h('thead', {}, h('tr', {}, h('th', { scope: 'col' }, 'Retirement year'), h('th', { scope: 'col', class: 'r' }, 'Tonnes'))),
         h('tbody', {}, p.by_year.map((y) => h('tr', {}, h('th', { scope: 'row' }, y.year === 'unknown' ? 'Date not recorded' : y.year), h('td', { class: 'r' }, t(y.tonnes)))))))) : null,
     p.top_projects.length ? h('section', { class: 'section card card-pad', 'aria-labelledby': 'projects-h' },
       h('h2', { id: 'projects-h' }, 'Projects in matching records'),
       h('p', { class: 'hint', style: 'margin:8px 0 14px' }, 'Up to 15 projects, ordered by tonnes retired. These totals do not rate project quality.'),
-      h('div', { class: 'table-wrap' }, h('table', { class: 'data' },
+      h('div', { class: 'table-wrap', tabindex: '0', role: 'region', 'aria-labelledby': 'projects-h' }, h('table', { class: 'data' },
         h('caption', { class: 'sr-only' }, `Largest projects in retirement records naming ${p.name}`),
         h('thead', {}, h('tr', {}, h('th', { scope: 'col' }, 'Project'), h('th', { scope: 'col' }, 'Registry'), h('th', { scope: 'col' }, 'Country'), h('th', { scope: 'col', class: 'r' }, 'Tonnes'))),
         h('tbody', {}, p.top_projects.map((x) => h('tr', {}, h('th', { scope: 'row' },
@@ -93,8 +103,9 @@ form.addEventListener('submit', async (e) => {
   status.textContent = `Searching retirement records for ${name}…`;
   try {
     const profile = await api(`/api/company?${q}`);
-    history.replaceState(null, '', `${location.pathname}?${q}`);
-    show(profile, aliases);
+    const permalink = `${location.pathname}?${q}`;
+    show(profile, aliases, permalink);
+    history.replaceState(null, '', permalink);
   } catch (err) {
     status.textContent = '';
     msg.textContent = `${err.message} Your search is still here; use “Search records” to try again.`;

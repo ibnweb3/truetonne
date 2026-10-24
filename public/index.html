@@ -6,9 +6,6 @@
 <title>TrueTonne: check the evidence behind a carbon-offset claim</title>
 <meta name="description" content="Compare a company's carbon-offset claim with public retirement records. See the matching evidence, any shortfall, and the limits of the check.">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/style.css">
 </head>
 <body>
@@ -39,7 +36,7 @@
     <div class="card-pad" style="padding-bottom:0">
       <h2 id="form-h" tabindex="-1">Check a claim</h2>
       <p class="hint small" style="margin-top:8px">Use public information only. Running a check saves your inputs and any pasted text in a report that anyone with its link can read.</p>
-      <div class="note" id="form-notice" role="status" aria-live="polite" hidden style="margin-top:14px"></div>
+      <div class="note" id="form-notice" role="status" aria-live="polite" tabindex="-1" hidden style="margin-top:14px"></div>
     </div>
     <div class="tabs" role="tablist" aria-label="How to enter the claim" style="margin-top:12px">
       <button class="tab" type="button" role="tab" id="tab-paste" aria-controls="pane-paste" aria-selected="true">Paste claim text</button>
@@ -56,6 +53,7 @@
         </div>
         <div class="actions">
           <button class="btn btn-primary" type="submit" id="extract-btn" disabled>Find the claims</button>
+          <button class="btn" type="button" id="extract-cancel" hidden>Cancel reading</button>
           <span class="hint small">Cloudflare's AI reads the text. You review its suggestions before running a check. You can also <button type="button" class="btn btn-quiet" id="enter-manually">enter details yourself</button>.</span>
         </div>
         <div class="note bad" id="extract-msg" role="alert" tabindex="-1" hidden style="margin-top:14px"></div>
@@ -66,8 +64,12 @@
       <form id="check-form" novalidate>
         <div class="note" id="review-note" role="status" hidden style="margin-bottom:16px"></div>
         <details id="source-preview" hidden style="margin-bottom:16px">
-          <summary>Review the source text saved with this report</summary>
+          <summary>Source text to save with the report</summary>
           <p id="source-preview-text" class="small" style="white-space:pre-wrap"></p>
+          <div class="actions" style="margin-top:10px">
+            <button class="btn" id="edit-source" type="button">Edit source text</button>
+            <button class="btn btn-quiet" id="remove-source" type="button">Remove source text</button>
+          </div>
         </details>
         <div class="row2">
           <div class="field">
@@ -112,9 +114,9 @@
   <section class="section" aria-labelledby="how-h">
     <h2 id="how-h" style="margin-bottom:12px">What happens when you check</h2>
     <div class="steps">
-      <div class="card step"><span class="k">1. Review</span><h3>Start with the claim</h3><p>Paste the source text or enter the details. AI suggestions are checked against your text, but still need your review.</p></div>
-      <div class="card step"><span class="k">2. Compare</span><h3>See the matching evidence</h3><p>The report compares the amount claimed with records that name the company. It also shows missing evidence, shared records and data limitations.</p></div>
-      <div class="card step"><span class="k">3. Keep a record</span><h3>Save and share the result</h3><p>Each report has a link and a downloadable record. Optional recording on the Base Sepolia test network checks overlaps within TrueTonne's ledger; it does not certify credit ownership.</p></div>
+      <div class="step"><span class="k">1. Review</span><h3>Start with the claim</h3><p>Paste the source text or enter the details. Review any suggested company names, projects, amounts and dates.</p></div>
+      <div class="step"><span class="k">2. Compare</span><h3>Read the evidence</h3><p>See the retirement records that match the company and claim details, along with any missing evidence.</p></div>
+      <div class="step"><span class="k">3. Share</span><h3>Keep the report</h3><p>Copy its link or download the full record. Read the <a href="/docs.html">method and limits</a> before relying on a result.</p></div>
     </div>
   </section>
 </main>

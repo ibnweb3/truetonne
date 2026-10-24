@@ -1,11 +1,11 @@
 <main class="wrap" id="main">
-  <div class="docs-layout">
-  <nav class="toc" aria-label="On this page"><b>On this page</b><a href="#what-it-checks">What it checks</a><a href="#how-to-read-a-result">How to read a result</a><a href="#coverage">Data and coverage</a><a href="#matching">Matching</a><a href="#the-ai-step">The AI step</a><a href="#information-you-submit">Information you submit</a><a href="#the-on-chain-record">The on-chain record</a><a href="#limits-you-should-know">Limits you should know</a><a href="#code">Code</a></nav>
-  <div class="prose">
   <section class="hero">
     <h1>Method, data and limits</h1>
     <p class="lede">Understand what a result means before you rely on it. TrueTonne compares carbon-credit claims with a dated copy of public registry records.</p>
   </section>
+  <div class="docs-layout">
+  <nav class="toc" aria-label="On this page"><b>On this page</b><a href="#what-it-checks">What it checks</a><a href="#how-to-read-a-result">How to read a result</a><a href="#coverage">Data and coverage</a><a href="#matching">Matching</a><a href="#the-ai-step">The AI step</a><a href="#information-you-submit">Information you submit</a><a href="#the-on-chain-record">The on-chain record</a><a href="#limits-you-should-know">Limits you should know</a><a href="#code">Code</a></nav>
+  <div class="prose">
 
   <div class="note">
     <b>A match is evidence of a registry record.</b> It does not prove that a company is carbon neutral, that a project delivered its promised climate benefit, or that the same credits have never been claimed elsewhere.
@@ -19,7 +19,10 @@
   <ul>
     <li><b>Quantity matched:</b> matching registry records cover the full stated quantity. Quantities are compared to three decimal places. Review any warnings and the matched project before drawing a conclusion.</li>
     <li><b>Partly backed:</b> some of the stated quantity has matching records. The report shows the amount without a match.</li>
-    <li><b>No matching records:</b> this snapshot cannot substantiate the claim under the details entered. This alone is not proof of a false claim; names, missing records and the snapshot date can explain a gap.</li>
+    <li><b>Not attributed:</b> retirements exist for the project and years entered, but none names the company or its other names.</li>
+    <li><b>No retirements:</b> the snapshot has no retirement records for the project and years entered. Missing records and the snapshot date can explain a gap; this alone is not proof of a false claim.</li>
+    <li><b>Project not in data:</b> the project ID or name did not match this snapshot. Check the spelling and the registry's coverage.</li>
+    <li><b>Already counted:</b> an earlier entry in the same report used the matching tonnes. Repeating a claim does not increase the evidence available.</li>
     <li><b>Records found:</b> no quantity was entered. Finding retirement records gives you a recorded total, but there is no claimed amount to compare it with.</li>
     <li><b>Choose a project:</b> several projects match the name you entered. Review or change the inputs using the registry ID for the intended project.</li>
   </ul>
@@ -44,7 +47,8 @@
   <p>You can enter claims yourself without using AI. The comparison with registry records follows the same rules either way.</p>
 
   <h2 id="information-you-submit">Information you submit</h2>
-  <p>Running a check saves a report containing the company, claim details, matching records and any source text included with the check. Anyone with the report link can read and download it. Use public claims, and leave out confidential or personal information. Company lookup searches do not create a report.</p>
+  <p>Running a check saves a report containing the company, claim details, matching records and any source text included with the check. Review, edit or remove the source text in the details form before saving. Anyone with the report link can read and download it. Use public claims, and leave out confidential or personal information. Company lookup searches do not create a report.</p>
+  <p>Your browser keeps an unfinished claim in this tab's session storage so it can be restored after a reload or when you return from a report. Use Clear form to replace it with an empty draft. Private browsing or browser storage limits can prevent this recovery.</p>
 
   <h2 id="the-on-chain-record">The on-chain record</h2>
   <p>Recording is optional and takes place on Base Sepolia, a test network. It stores a fingerprint of the report and reserves the matched tonnes within the TrueTonne contract. If another company has already reserved those tonnes there, the contract blocks the overlapping allocation. A report can still be recorded even when some of its allocations are blocked; read the transaction result.</p>

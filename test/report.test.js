@@ -2,7 +2,7 @@ import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { reportHash } from '../src/hash.js';
 
-const globalNames = ['Node', 'window', 'document', 'location', 'fetch'];
+const globalNames = ['Node', 'window', 'document', 'location', 'fetch', 'navigator'];
 const originalGlobals = new Map(globalNames.map((name) => [name, Object.getOwnPropertyDescriptor(globalThis, name)]));
 const nativeFetch = globalThis.fetch;
 after(() => {
@@ -81,7 +81,8 @@ async function openReport(payload = fixture(), options = {}) {
     title: '', querySelector: (selector) => main.querySelector(selector),
     createElement: (tag) => new Element(tag), createTextNode: (text) => new Element('#text', text),
   };
-  globalThis.location = { pathname: options.path || '/r/abcdefghijkl' };
+  globalThis.location = { pathname: options.path || '/r/abcdefghijkl', origin: 'https://truetonne.example' };
+  Object.defineProperty(globalThis, 'navigator', { configurable: true, value: options.navigator || {} });
   globalThis.fetch = async (path, init) => {
     requests.push({ path, init });
     if (options.networkError) throw new TypeError('offline');
@@ -101,6 +102,7 @@ test('report presents actual amounts and preserves editable inputs and lookup al
   const page = await openReport();
   assert.match(page.main.textContent, /5,000 t of 5,000 t claimed matched/);
   assert.match(page.main.textContent, /Vintage 2020/);
+  assert.match(page.main.textContent, /Other names included in this check: Example Holdings/);
   assert.doesNotMatch(page.main.textContent, /\bnull\b|\bundefined\b|\bNaN\b/);
   assert.equal(page.main.attributes['aria-busy'], 'false');
   assert.equal(page.link('Review or change inputs').attributes.href, '/?edit=abcdefghijkl');
@@ -182,19 +184,111 @@ test('ambiguous project results list candidates and direct the user to an exact 
   assert.match(page.main.textContent, /Forest One \(CAR1\)/);
   assert.match(page.main.textContent, /Forest Two \(CAR2\)/);
   assert.match(page.main.textContent, /exact project ID/);
-  assert.match(page.main.textContent, /There are no matching tonnes to reserve/);
+  assert.equal(page.main.find((element) => element.className?.includes('chain-panel')), undefined);
   assert.equal(page.button('Record on test network'), undefined);
 });
 
-test('unavailable blockchain configuration never exposes a record action', async () => {
+test('unavailable optional blockchain configuration does not create a dead feature card', async () => {
   let page = await openReport();
-  assert.match(page.main.textContent, /New blockchain records are currently unavailable/);
+  assert.equal(page.main.find((element) => element.className?.includes('chain-panel')), undefined);
   assert.equal(page.button('Record on test network'), undefined);
   const payload = fixture();
   payload.chain = null;
   page = await openReport(payload);
-  assert.match(page.main.textContent, /Blockchain recording is unavailable/);
+  assert.equal(page.main.find((element) => element.className?.includes('chain-panel')), undefined);
   assert.equal(page.button('Record on test network'), undefined);
+});
+
+test('the on-chain record is open by default and stays open while pending', async () => {
+  const payload = fixture();
+  payload.chain.can_record = true;
+  let page = await openReport(payload);
+  let disclosure = page.main.find((element) => element.className?.includes('chain-panel'));
+  assert.equal(disclosure.tag, 'details');
+  assert.equal(disclosure.attributes.open, '');
+  payload.anchor = { status: 'pending', stage: 'submitting' };
+  page = await openReport(payload);
+  disclosure = page.main.find((element) => element.className?.includes('chain-panel'));
+  assert.equal(disclosure.attributes.open, '');
+});
+
+test('report links copy with a usable selection fallback when clipboard access fails', async () => {
+  const copied = [];
+  let page = await openReport(fixture(), { navigator: { clipboard: { writeText: async (value) => copied.push(value) } } });
+  await page.button('Copy report link').events.click();
+  assert.deepEqual(copied, ['https://truetonne.example/r/abcdefghijkl']);
+  assert.match(page.main.textContent, /Report link copied/);
+  page = await openReport(fixture(), { navigator: { clipboard: { writeText: async () => { throw new Error('denied'); } } } });
+  await page.button('Copy report link').events.click();
+  const field = page.main.querySelector('#report-link');
+  assert.equal(field.attributes.value, 'https://truetonne.example/r/abcdefghijkl');
+  assert.equal(field.attributes.readonly, '');
+  assert.equal(field.focused, true);
+  assert.match(page.main.textContent, /Select and copy the report link below/);
+});
+
+test('unknown or incomplete recording results cannot claim success or create missing transaction links', async () => {
+  const payload = fixture();
+  payload.chain.can_record = true;
+  for (const anchor of [{}, { status: 'unexpected' }, { status: 'confirmed' }]) {
+    payload.anchor = anchor;
+    const page = await openReport(payload);
+    assert.match(page.main.textContent, /recording status could not be read/);
+    assert.doesNotMatch(page.main.textContent, /Report recorded on|testnet ledger accepted/);
+    assert.equal(page.button('Record on test network'), undefined);
+    assert.equal(page.main.find((element) => element.attributes.href?.includes('undefined')), undefined);
+  }
+  payload.anchor = { status: 'failed' };
+  const page = await openReport(payload);
+  assert.match(page.main.textContent, /blockchain transaction failed/);
+  assert.equal(page.link('View failed transaction ↗'), undefined);
+});
+
+test('malformed chain configuration hides unconfigured actions while preserving saved evidence', async () => {
+  const payload = fixture();
+  payload.chain = {};
+  let page = await openReport(payload);
+  assert.equal(page.button('Record on test network'), undefined);
+  assert.equal(page.main.find((element) => element.className?.includes('chain-panel')), undefined);
+  payload.anchor = { status: 'pending', tx: '0xabc' };
+  page = await openReport(payload);
+  assert.match(page.main.textContent, /saved testnet record cannot be checked/);
+  assert.match(page.main.textContent, /5,000 t of 5,000 t/);
+  assert.equal(page.main.find((element) => element.attributes.href?.includes('undefined')), undefined);
+});
+
+test('malformed claim amounts recover instead of displaying misleading totals', async () => {
+  const payload = fixture();
+  payload.report.claims[0].backed = '5000';
+  const page = await openReport(payload);
+  assert.match(page.main.textContent, /Report could not load/);
+  assert.doesNotMatch(page.main.textContent, /5,000 t of 5,000 t|NaN|undefined/);
+  assert.ok(page.button('Try loading again'));
+});
+
+test('damaged optional receipts and allocations never hide valid registry results or imply accepted tonnes', async () => {
+  const mutations = [
+    (payload) => { payload.anchor = { status: 'confirmed', tx: '0xabc', block: 1, claimed: 'broken' }; },
+    (payload) => { payload.anchor = { status: 'confirmed', tx: '0xabc', block: 1, blocked: [null] }; },
+    (payload) => { payload.anchor = { status: 'confirmed', tx: '0xabc', block: 1, claimed: [{ row: 1, tonnes: '5000' }] }; },
+    (payload) => { payload.anchor = { status: 'confirmed', tx: '0xabc', block: 1, claimed: [{ row: 1, tonnes: -1 }] }; },
+    (payload) => { payload.ledger = { rows: 'broken' }; },
+    (payload) => { payload.ledger = { rows: [null] }; },
+    (payload) => { payload.ledger = { rows: [{ read_ok: true, held_by_others: '5000' }] }; },
+    (payload) => { payload.report.claims[0].allocation = 'broken'; },
+    (payload) => { payload.report.claims[0].allocation = [null]; },
+  ];
+  for (const mutate of mutations) {
+    const payload = fixture();
+    payload.chain.can_record = true;
+    mutate(payload);
+    const page = await openReport(payload);
+    assert.match(page.main.textContent, /5,000 t of 5,000 t/);
+    assert.match(page.main.textContent, /recording status could not be read/);
+    assert.doesNotMatch(page.main.textContent, /Report could not load|Report recorded on|testnet ledger accepted|NaN|undefined/);
+    assert.equal(page.button('Record on test network'), undefined);
+    assert.ok(page.link('Download full report (JSON)'));
+  }
 });
 
 test('an existing ledger hash record suppresses duplicate recording even without a server receipt', async () => {
@@ -328,4 +422,15 @@ test('older reports disclose rounding shortfalls and reject unsafe registry link
   assert.match(page.main.textContent, /older report accepted a small rounding shortfall/);
   assert.match(page.main.textContent, /1 t has no matching retirement/);
   assert.equal(page.main.find((element) => element.attributes.href?.startsWith('javascript:')), undefined);
+});
+
+test('a small quantity gap never rounds the displayed coverage up to 100 percent', async () => {
+  const payload = fixture();
+  Object.assign(payload.report.claims[0], { claimed: 5000, backed: 4999.999, gap: 0.001, verdict: 'partly_backed' });
+  const page = await openReport(payload);
+  assert.match(page.main.textContent, /0.001 t has no matching retirement/);
+  assert.match(page.main.textContent, /Over 99.999% of the claimed amount/);
+  assert.doesNotMatch(page.main.textContent, /100% of the claimed amount/);
+  const evidence = page.main.find((element) => element.attributes.role === 'region' && element.attributes['aria-label']?.includes('Retirement evidence'));
+  assert.equal(evidence.attributes.tabindex, '0');
 });

@@ -18,8 +18,8 @@ export function h(tag, attrs = {}, ...children) {
 }
 
 const nf = new Intl.NumberFormat('en-US', { maximumFractionDigits: 3 });
-export const t = (n) => (n === null || n === undefined ? '—' : `${nf.format(n)} t`);
-export const n = (x) => nf.format(x);
+export const t = (value) => Number.isFinite(value) ? `${nf.format(value)} t` : 'Not recorded';
+export const n = (value) => Number.isFinite(value) ? nf.format(value) : 'Not recorded';
 export const day = (iso) => {
   if (!iso) return 'Date not recorded';
   const date = new Date(iso + (iso.length === 10 ? 'T00:00:00Z' : ''));
@@ -41,8 +41,11 @@ export async function api(path, opts = {}) {
       body: options.body && typeof options.body !== 'string' ? JSON.stringify(options.body) : options.body,
     });
     let data = null;
-    try { data = await res.json(); } catch { /* The service may return a non-JSON error page. */ }
-    if (!res.ok || !data || typeof data !== 'object') {
+    try { data = await res.json(); } catch (error) {
+      if (error.name === 'AbortError') throw error;
+      // The service may return a non-JSON error page.
+    }
+    if (!res.ok || !data || typeof data !== 'object' || Array.isArray(data)) {
       const fallback = res.status === 429 ? 'Too many requests. Please wait before trying again.'
         : res.status >= 500 ? 'The service is temporarily unavailable. Please try again.'
         : res.ok ? 'The service returned an unreadable response. Please try again.' : `Request failed (${res.status}). Please try again.`;
@@ -105,6 +108,7 @@ export async function sha256Hex(text) {
 }
 
 export function busy(btn, on, text) {
+  btn.setAttribute('aria-busy', String(on));
   if (on) {
     btn.dataset.label = btn.textContent;
     btn.disabled = true;

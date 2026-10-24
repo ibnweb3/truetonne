@@ -199,3 +199,24 @@ test('an incomplete company response never renders an undefined organisation as 
   assert.match(page.ids.msg.textContent, /incomplete response/);
   assert.equal(page.ids.go.disabled, false);
 });
+
+test('malformed company totals and breakdowns show a recoverable error before publishing a lookup link', async () => {
+  for (const malformed of [
+    { ...profile(), retirements: -1 },
+    { ...profile(), tonnes: -1 },
+    { ...profile(), by_year: [null] },
+    { ...profile(), by_year: [{ year: '2023', tonnes: 'unknown' }] },
+    { ...profile(), top_projects: [{ id: 'CAR1335', tonnes: null }] },
+    { ...profile(), variants: 'Example' },
+    { ...profile(), dataset: null },
+    { ...profile(), matched_on: { account: -1 } },
+  ]) {
+    const page = await setup({ respond: () => malformed });
+    page.ids.name.value = 'Example Corp';
+    await page.submit();
+    assert.equal(page.ids.result.textContent, '');
+    assert.match(page.ids.msg.textContent, /incomplete response/);
+    assert.equal(page.ids.go.disabled, false);
+    assert.equal(location.search, '');
+  }
+});

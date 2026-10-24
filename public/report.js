@@ -17,6 +17,18 @@ function externalLink(url, text, attrs = {}) {
   return href ? h('a', { ...attrs, href, target: '_blank', rel: 'noopener noreferrer' }, text) : h('span', attrs, text);
 }
 
+function transactionLink(anchor, chain, label) {
+  // A missing transaction hash must never turn into a convincing /tx/undefined link.
+  const url = safeUrl(anchor?.url) || (anchor?.tx && safeUrl(`${chain.explorer}/tx/${anchor.tx}`));
+  return url ? externalLink(url, label) : null;
+}
+
+function focusRecordingStatus() {
+  const heading = $('#chain-h');
+  heading?.closest?.('details')?.setAttribute('open', '');
+  heading?.focus();
+}
+
 function claimCard(c) {
   const flags = Array.isArray(c.flags) ? c.flags : [];
   const rows = Array.isArray(c.rows) ? c.rows : [];
@@ -44,7 +56,7 @@ function claimCard(c) {
         h('div', {}, h('div', { class: 'k' }, quantified ? 'Matched to this claim' : 'Matching tonnes'), h('div', { class: 'v' }, t(c.backed))),
         c.gap > 0 ? h('div', {}, h('div', { class: 'k' }, 'Without matching evidence'), h('div', { class: 'v' }, t(c.gap))) : null),
       c.claimed > 0 ? h('div', {},
-        h('p', { class: 'small hint' }, `${n(pct)}% of the claimed amount matched in the snapshot`),
+        h('p', { class: 'small hint' }, `${pct < 100 && n(pct) === '100' ? 'Over 99.999' : n(pct)}% of the claimed amount matched in the snapshot`),
         h('div', { class: 'bar', 'aria-hidden': 'true' }, h('i', { style: `width:${pct}%` }))) : null,
       roundingShortfall ? h('p', { class: 'note warn' }, 'This older report accepted a small rounding shortfall. The figures above show the full amount without matching evidence.') : null,
       knownFlags.length ? h('ul', { class: 'flags' }, knownFlags.map((f) => h('li', { class: FLAGS[f][0] }, FLAGS[f][1]))) : null,
@@ -52,7 +64,7 @@ function claimCard(c) {
       rows.length ? h('details', { open: rows.length <= 5 },
         h('summary', {}, `Retirements used for this claim (${n(c.rows_total ?? rows.length)} rows)`),
         c.rows_total > rows.length ? h('p', { class: 'small hint', style: 'margin-bottom:10px' }, `Showing ${n(rows.length)} of ${n(c.rows_total)} rows. The JSON download contains the full allocation of row IDs and tonnes.`) : null,
-        h('div', { class: 'table-wrap' }, h('table', { class: 'data' },
+        h('div', { class: 'table-wrap', tabindex: '0', role: 'region', 'aria-label': `Retirement evidence for claim ${c.n}. Scroll horizontally for all columns.` }, h('table', { class: 'data' },
           h('caption', { class: 'sr-only' }, `Registry retirement evidence for claim ${c.n}`),
           h('thead', {}, h('tr', {}, h('th', { scope: 'col' }, 'Row / project'), h('th', { scope: 'col' }, 'Retired / vintage'), h('th', { class: 'r', scope: 'col' }, 'Used here'), h('th', { class: 'r', scope: 'col' }, 'Row total'), h('th', { scope: 'col' }, 'Registry names'), h('th', { scope: 'col' }, 'Name found in'))),
           h('tbody', {}, rows.map((r) => h('tr', {},
@@ -65,7 +77,7 @@ function claimCard(c) {
       scope.top?.length ? h('details', {},
         h('summary', {}, `Other context: ${t(scope.retired_total)} retired across this scope`),
         h('p', { class: 'small hint', style: 'margin-bottom:10px' }, `The ${scope.top.length} largest beneficiary entries are shown below, including any matching claimant. These totals include retirements for other organisations and do not add to this claim's backing.`),
-        h('div', { class: 'table-wrap' }, h('table', { class: 'data' },
+        h('div', { class: 'table-wrap', tabindex: '0', role: 'region', 'aria-label': `Other beneficiaries for claim ${c.n}` }, h('table', { class: 'data' },
           h('caption', { class: 'sr-only' }, 'Largest beneficiaries across the selected project, vintage and retirement year'),
           h('thead', {}, h('tr', {}, h('th', { scope: 'col' }, 'Beneficiary in registry'), h('th', { class: 'r', scope: 'col' }, 'Tonnes'), h('th', { class: 'r', scope: 'col' }, 'Retirements'))),
           h('tbody', {}, scope.top.map((x) => h('tr', {}, h('td', {}, x.name || 'Beneficiary not recorded'), h('td', { class: 'r' }, t(x.tonnes)), h('td', { class: 'r' }, n(x.retirements)))))))) : null,
@@ -74,17 +86,43 @@ function claimCard(c) {
 
 function chainPanel(data) {
   const { anchor, ledger, chain } = data;
-  const box = h('section', { class: 'card card-pad section', 'aria-labelledby': 'chain-h' },
-    h('h2', { id: 'chain-h' }, 'Optional blockchain record'),
+  const configured = chain && typeof chain.ledger === 'string' && safeUrl(chain.ledger_url) && safeUrl(chain.explorer);
+  const savedRecord = anchor || ledger?.anchored_block;
+  const object = (value) => value && typeof value === 'object' && !Array.isArray(value);
+  const amount = (value) => typeof value === 'number' && Number.isFinite(value) && value >= 0;
+  const rowId = (value) => Number.isSafeInteger(value) && value > 0;
+  const optionalRows = (value, valid) => value === undefined || (Array.isArray(value) && value.every(valid));
+  // Testnet metadata is optional. A damaged receipt must not hide registry evidence
+  // or quietly turn missing allocation details into a successful reservation.
+  const allocationValid = data.report.claims.every((c) => optionalRows(c.allocation, (row) => Array.isArray(row) && rowId(row[0]) && amount(row[1]) && amount(row[2])));
+  const anchorValid = anchor == null || (object(anchor)
+    && (anchor.tx === undefined || (typeof anchor.tx === 'string' && anchor.tx.length > 0))
+    && (anchor.message === undefined || typeof anchor.message === 'string')
+    && optionalRows(anchor.claimed, (row) => object(row) && rowId(row.row) && amount(row.tonnes))
+    && optionalRows(anchor.blocked, (row) => object(row) && rowId(row.row) && amount(row.requested) && amount(row.held_by_others) && amount(row.cap))
+    && (anchor.rows_skipped === undefined || (Number.isSafeInteger(anchor.rows_skipped) && anchor.rows_skipped >= 0))
+    && Number.isFinite((anchor.claimed || []).reduce((sum, row) => sum + row.tonnes, 0)));
+  const ledgerValid = ledger == null || (object(ledger)
+    && (ledger.anchored_block == null || (Number.isSafeInteger(ledger.anchored_block) && ledger.anchored_block >= 0))
+    && optionalRows(ledger.rows, (row) => object(row) && typeof row.read_ok === 'boolean' && (!row.read_ok || amount(row.held_by_others))));
+  const metadataValid = allocationValid && anchorValid && ledgerValid;
+  const allocated = allocationValid ? new Set(data.report.claims.flatMap((c) => (c.allocation || []).filter((row) => row[1] > 0).map((row) => row[0]))).size : 0;
+  if (!savedRecord && (!configured || chain.can_record !== true || (!allocated && metadataValid))) return null;
+  const box = h('details', { class: 'card card-pad section chain-panel', open: true, 'aria-labelledby': 'chain-h' },
+    h('summary', {}, h('h2', { id: 'chain-h', tabindex: '-1' }, 'Optional testnet record')),
     h('p', { class: 'hint', style: 'margin-top:8px' }, 'This feature uses Base Sepolia, a test network. It records this report and checks competing allocations within the TrueTonne ledger. It does not verify company identity or prevent claims elsewhere.'));
-  if (!chain) {
-    box.append(h('p', { class: 'note', style: 'margin-top:12px' }, 'Blockchain recording is unavailable. Your saved report and JSON download remain available.'));
+  if (!configured) {
+    box.append(h('p', { class: 'note', style: 'margin-top:12px' }, 'The saved testnet record cannot be checked right now. Your registry report and JSON download remain available.'));
     return box;
   }
-  const allocated = new Set(data.report.claims.flatMap((c) => (c.allocation || []).filter((row) => row[1] > 0).map((row) => row[0]))).size;
-  const maxRows = chain.max_rows || 80;
+  if (!metadataValid) {
+    box.append(h('p', { class: 'note warn', role: 'status', style: 'margin-top:12px' }, 'The recording status could not be read. Your registry report remains saved. Reload this page to check again before attempting another recording.'));
+    return box;
+  }
+  const maxRows = Number.isSafeInteger(chain.max_rows) && chain.max_rows > 0 ? chain.max_rows : 80;
   const others = (ledger?.rows || []).filter((r) => r.read_ok && r.held_by_others > 0);
-  if (ledger?.anchored_block && (!anchor || anchor.status === 'pending')) {
+  const confirmed = (anchor?.status === 'confirmed' || !anchor?.status) && typeof anchor?.tx === 'string' && Number.isSafeInteger(anchor.block) && anchor.block > 0;
+  if (ledger?.anchored_block && !confirmed) {
     box.append(h('p', { class: 'note ok', style: 'margin-top:12px' }, 'The report hash is already recorded on Base Sepolia in ',
       externalLink(`${chain.explorer}/block/${ledger.anchored_block}`, `block ${n(ledger.anchored_block)} ↗`), '.'));
     box.append(h('p', { class: 'hint', style: 'margin-top:12px' }, 'The transaction receipt is unavailable on this server, so accepted and blocked retirement allocations cannot be displayed. The hash record alone does not confirm that every allocation was accepted.'));
@@ -93,7 +131,7 @@ function chainPanel(data) {
       : anchor.stage === 'unknown' ? 'This recording request was interrupted before a transaction link could be saved. Submission could not be confirmed.'
       : 'Your recording request is being submitted. No retirement allocation is confirmed yet. Check its status again shortly.';
     box.append(h('p', { class: 'note warn', style: 'margin-top:12px' }, anchor.message || fallbackMessage,
-    anchor.tx ? externalLink(anchor.url || `${chain.explorer}/tx/${anchor.tx}`, 'View submitted transaction ↗') : null));
+    transactionLink(anchor, chain, 'View submitted transaction ↗')));
     if (anchor.stage === 'unknown') box.append(h('p', { class: 'hint', style: 'margin-top:12px' }, 'Your registry report is saved. ',
       h('a', { href: `/?edit=${id}` }, 'Review the inputs to create a new report'), ' if you need to start again.'));
     if (anchor.rows_skipped > 0) box.append(h('p', { class: 'hint', style: 'margin-top:12px' }, `${n(anchor.rows_skipped)} backing rows were omitted because each transaction is limited to ${n(maxRows)} rows.`));
@@ -101,29 +139,39 @@ function chainPanel(data) {
     const status = h('p', { class: 'small hint', role: 'status', 'aria-live': 'polite', style: 'margin-top:12px' });
     refresh.addEventListener('click', async () => {
       busy(refresh, true, 'Checking status…');
-      try { renderReport(await api(`/api/report/${id}`)); }
+      try {
+        const latest = await api(`/api/report/${id}`);
+        if (latest.anchor?.status === 'pending' && latest.anchor.stage === anchor.stage && latest.anchor.tx === anchor.tx && !latest.ledger?.anchored_block) {
+          status.textContent = 'Checked just now. Confirmation is still pending; your registry report remains saved.';
+        } else {
+          renderReport(latest);
+          focusRecordingStatus();
+        }
+      }
       catch (e) { status.textContent = e.message; }
       finally { busy(refresh, false); }
     });
     box.append(refresh, status);
   } else if (anchor?.status === 'failed') {
     box.append(h('p', { class: 'note bad', style: 'margin-top:12px' }, 'The blockchain transaction failed. No allocation was recorded by this transaction. Your registry report remains saved. ',
-      externalLink(anchor.url || `${chain.explorer}/tx/${anchor.tx}`, 'View failed transaction ↗')));
-  } else if (anchor) {
-    box.append(h('p', { style: 'margin-top:12px' }, 'Report recorded on ', externalLink(anchor.url || `${chain.explorer}/tx/${anchor.tx}`, 'Base Sepolia ↗'), anchor.block ? ` in block ${n(anchor.block)}.` : '.'));
+      transactionLink(anchor, chain, 'View failed transaction ↗')));
+  } else if (confirmed) {
+    box.append(h('p', { style: 'margin-top:12px' }, 'Report recorded on ', transactionLink(anchor, chain, 'Base Sepolia ↗') || 'Base Sepolia', anchor.block ? ` in block ${n(anchor.block)}.` : '.'));
     if (anchor.blocked?.length) box.append(h('div', { class: 'note bad', style: 'margin-top:12px' }, h('b', {}, 'Some allocations were blocked. '),
       `The testnet ledger refused ${n(anchor.blocked.length)} retirement row${anchor.blocked.length > 1 ? 's' : ''} because another claimant already reserved enough tonnes to exceed the row's capacity. This does not change the registry matches above.`,
       h('ul', {}, anchor.blocked.map((b) => h('li', {}, `Row #${b.row}: requested ${t(b.requested)}; other claimants hold ${t(b.held_by_others)} of the ${t(b.cap)} capacity.`)))));
     if (anchor.claimed?.length) box.append(h('div', { class: 'note ok', style: 'margin-top:12px' }, `The testnet ledger accepted ${t(anchor.claimed.reduce((sum, row) => sum + row.tonnes, 0))} across ${n(anchor.claimed.length)} row${anchor.claimed.length > 1 ? 's' : ''} for this claimant. Repeated checks for the same claimant can reuse its existing reservation.`));
-    if (!anchor.claimed?.length && !anchor.blocked?.length) box.append(h('p', { class: 'hint', style: 'margin-top:12px' }, 'The report hash was recorded without any retirement allocation.'));
+    if (!anchor.claimed?.length && !anchor.blocked?.length) box.append(h('p', { class: 'hint', style: 'margin-top:12px' }, Array.isArray(anchor.claimed) && Array.isArray(anchor.blocked) ? 'The report hash was recorded without any retirement allocation.' : 'The saved receipt does not include retirement allocation details.'));
     if (anchor.rows_skipped > 0) box.append(h('p', { class: 'note warn', style: 'margin-top:12px' }, `${n(anchor.rows_skipped)} backing rows were not submitted because each transaction is limited to ${n(maxRows)} rows. This record covers only the submitted rows.`));
+  } else if (anchor) {
+    box.append(h('p', { class: 'note warn', role: 'status', style: 'margin-top:12px' }, 'The recording status could not be read. Your registry report remains saved. Reload this page to check again before attempting another recording.'));
   } else if (!allocated) {
     box.append(h('p', { class: 'note', style: 'margin-top:12px' }, 'There are no matching tonnes to reserve in the testnet ledger. The registry result above is already saved.'));
-  } else if (chain.can_record === false) {
+  } else if (chain.can_record !== true) {
     box.append(h('p', { class: 'note', style: 'margin-top:12px' }, 'New blockchain records are currently unavailable. The registry result above is already saved.'));
   } else {
     box.append(h('p', { class: 'hint', style: 'margin-top:12px' }, 'Recording submits this report hash and its matching retirement rows to the testnet ledger. No wallet or payment is required. Allow up to a minute for confirmation.'));
-    if (!ledger || ledger.rows?.some((r) => !r.read_ok)) box.append(h('p', { class: 'note warn', style: 'margin-top:12px' }, 'Current ledger availability could not be fully checked. The contract will check each submitted row when recording.'));
+    if (!ledger || !Array.isArray(ledger.rows) || ledger.rows.some((r) => !r.read_ok)) box.append(h('p', { class: 'note warn', style: 'margin-top:12px' }, 'Current ledger availability could not be fully checked. The contract will check each submitted row when recording.'));
     if (others.length) box.append(h('p', { class: 'note warn', style: 'margin-top:12px' }, `Other claimants have reservations on ${n(others.length)} matching row${others.length > 1 ? 's' : ''}. The contract will refuse any allocation that exceeds the remaining capacity.`));
     if (allocated > maxRows) box.append(h('p', { class: 'note warn', style: 'margin-top:12px' }, `This report uses ${n(allocated)} rows. Only the first ${n(maxRows)} can be submitted; ${n(allocated - maxRows)} rows will remain outside this blockchain record.`));
     const btn = h('button', { class: 'btn', type: 'button', style: 'margin-top:14px' }, 'Record on test network');
@@ -134,7 +182,10 @@ function chainPanel(data) {
       busy(statusBtn, true, 'Checking status…');
       try {
         const latest = await api(`/api/report/${id}`);
-        if (latest.anchor || latest.ledger?.anchored_block) renderReport(latest);
+        if (latest.anchor || latest.ledger?.anchored_block) {
+          renderReport(latest);
+          focusRecordingStatus();
+        }
         else statusNote.textContent = 'The report record is not confirmed yet. Check the transaction link and try the status check again shortly.';
       } catch (e) {
         statusNote.textContent = e.message;
@@ -146,11 +197,12 @@ function chainPanel(data) {
       try {
         const result = await api(`/api/report/${id}/anchor`, { method: 'POST' });
         renderReport({ ...data, anchor: result });
+        focusRecordingStatus();
         $('#chain-h')?.scrollIntoView({ block: 'center' });
       } catch (e) {
         msg.replaceChildren(e.message);
         if (e.data?.tx) {
-          msg.append(' ', externalLink(e.data.url || `${chain.explorer}/tx/${e.data.tx}`, 'View submitted transaction ↗'),
+          msg.append(' ', transactionLink(e.data, chain, 'View submitted transaction ↗') || '',
             h('p', { style: 'margin-top:8px' }, 'A transaction was submitted. Check its status before attempting another recording.'), statusNote);
           btn.hidden = true;
           statusBtn.hidden = false;
@@ -161,7 +213,7 @@ function chainPanel(data) {
     });
     box.append(btn, msg, statusBtn);
   }
-  box.append(h('p', { class: 'small hint', style: 'margin-top:12px' }, 'Testnet contract: ', externalLink(chain.ledger_url, chain.ledger, { class: 'hash' })));
+  if (chain.ledger) box.append(h('p', { class: 'small hint', style: 'margin-top:12px' }, 'Testnet contract: ', externalLink(chain.ledger_url, chain.ledger, { class: 'hash' })));
   return box;
 }
 
@@ -182,19 +234,42 @@ function proofPanel(data) {
   if (downloadUrl) URL.revokeObjectURL(downloadUrl);
   downloadUrl = URL.createObjectURL(new Blob([JSON.stringify(data.report, null, 2)], { type: 'application/json' }));
   const dl = h('a', { class: 'btn', download: `truetonne-${id}.json`, href: downloadUrl }, 'Download full report (JSON)');
+  const copy = h('button', { class: 'btn', type: 'button' }, 'Copy report link');
+  const copyStatus = h('p', { class: 'small hint', role: 'status', 'aria-live': 'polite', hidden: true, style: 'margin-top:12px' });
+  const link = `${location.origin}/r/${id}`;
+  const linkField = h('input', { id: 'report-link', type: 'text', readonly: true, value: link });
+  const copyFallback = h('div', { hidden: true, style: 'margin-top:12px' }, h('label', { for: 'report-link' }, 'Public report link'), linkField);
+  copy.addEventListener('click', async () => {
+    busy(copy, true, 'Copying…');
+    try {
+      await navigator.clipboard.writeText(link);
+      copyStatus.textContent = 'Report link copied. Anyone with the link can read this report.';
+      copyFallback.hidden = true;
+    } catch {
+      copyStatus.textContent = 'Select and copy the report link below.';
+      copyFallback.hidden = false;
+      linkField.focus();
+      linkField.select?.();
+    } finally { copyStatus.hidden = false; busy(copy, false); }
+  });
   return h('section', { class: 'card card-pad section', 'aria-labelledby': 'proof-h' }, h('h2', { id: 'proof-h' }, 'Save and verify this report'),
-    h('p', { class: 'hint', style: 'margin-top:8px' }, 'The JSON contains the reviewed inputs, registry results and full row allocations. The hash is a fingerprint of that file.'),
+    h('p', { class: 'hint', style: 'margin-top:8px' }, 'The JSON contains the reviewed inputs, registry results and full row allocations. Anyone with this report link can read and download it.'),
     h('details', { style: 'margin:12px 0' }, h('summary', {}, 'Report and dataset fingerprints'),
+      h('p', { class: 'small hint', style: 'margin:10px 0' }, 'The report fingerprint uses the data in a fixed key order. Whitespace and formatting in the downloaded JSON do not affect this check.'),
       h('dl', { class: 'kv' },
         h('dt', {}, 'Report SHA-256'), h('dd', { class: 'hash' }, data.hash),
         h('dt', {}, 'Dataset'), h('dd', {}, `${data.report.dataset.source}, ${day(data.report.dataset.generated_at)}`),
         h('dt', {}, 'Dataset SHA-256'), h('dd', { class: 'hash' }, data.report.dataset.zip_sha256))),
-    h('div', { class: 'actions' }, dl, btn), out);
+    h('div', { class: 'actions' }, copy, dl, btn), copyStatus, copyFallback, out);
 }
 
 function renderReport(data) {
   const r = data.report;
-  if (!r || !Array.isArray(r.claims) || !r.claims.length || !r.dataset || !r.summary || typeof r.claimant !== 'string') throw new Error('This report could not be read. Try reloading it or run a new check.');
+  const amount = (value) => typeof value === 'number' && Number.isFinite(value) && value >= 0;
+  if (!r || !Array.isArray(r.claims) || !r.claims.length || !r.dataset || !r.summary || typeof r.claimant !== 'string' || !r.claimant.trim()
+    || !amount(r.summary.tonnes_claimed) || !amount(r.summary.tonnes_backed)
+    || r.claims.some((claim) => !claim || !amount(claim.backed) || (claim.claimed != null && !amount(claim.claimed)) || (claim.gap != null && !amount(claim.gap)))
+    || (r.aliases != null && (!Array.isArray(r.aliases) || r.aliases.some((alias) => typeof alias !== 'string')))) throw new Error('This report could not be read. Try reloading it or run a new check.');
   const quantified = r.claims.filter((c) => c.claimed !== null && c.claimed !== undefined);
   const discoveries = r.claims.filter((c) => c.claimed === null || c.claimed === undefined);
   const found = discoveries.reduce((sum, c) => sum + (c.backed || 0), 0);
@@ -206,6 +281,7 @@ function renderReport(data) {
   main.replaceChildren(
     h('section', { class: 'hero' }, h('p', { class: 'hint' }, `Saved claim check · ${day(r.created_at)}`), h('h1', {}, r.claimant),
       h('p', { class: 'lede' }, hasAmount ? `${t(r.summary.tonnes_backed)} of ${t(r.summary.tonnes_claimed)} claimed matched registry retirements naming this claimant.` : `${t(found)} matched registry retirements naming this claimant. No claimed amount was supplied, so this is a lookup rather than a comparison.`),
+      r.aliases?.length ? h('p', { class: 'hint', style: 'margin-top:10px' }, `Other names included in this check: ${r.aliases.join('; ')}. Matches to these names are included in the totals.`) : null,
       hasAmount && discoveries.length ? h('p', { class: 'hint', style: 'margin-top:10px' }, `${n(discoveries.length)} additional claim${discoveries.length > 1 ? 's had' : ' had'} no amount to compare; ${t(found)} found for those entries is excluded from the claimed and backed totals.`) : null,
       h('div', { class: 'actions', style: 'margin-top:20px' },
         h('a', { class: 'btn', href: `/?edit=${id}` }, 'Review or change inputs'),

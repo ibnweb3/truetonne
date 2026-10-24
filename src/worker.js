@@ -1,4 +1,4 @@
-import { validateInput, runCheck, companyProfile, getDataset } from './check.js';
+import { validateInput, validateCompanyNames, runCheck, companyProfile, getDataset } from './check.js';
 import { extractClaims, MAX_TEXT } from './extract.js';
 import { reportHash } from './hash.js';
 import { normalizeProjectId } from './names.js';
@@ -105,7 +105,8 @@ const api = {
   'POST /api/extract': async (req, env) => {
     if (!(await allow(env, req, 'extract', 20, 3600))) return fail(429, 'Too many extractions from this connection. Try again in an hour, or enter the claims by hand.');
     const body = await readJson(req);
-    const text = String(body.text || '').trim();
+    if (typeof body.text !== 'string') return fail(400, 'Paste the claim as text.');
+    const text = body.text.trim();
     if (text.length < 20) return fail(400, 'Paste at least a sentence of the claim.');
     if (text.length > MAX_TEXT) return fail(400, `Paste at most ${MAX_TEXT.toLocaleString('en-US')} characters.`);
     try {
@@ -119,9 +120,11 @@ const api = {
     if (!(await allow(env, req, 'check', 60, 3600))) return fail(429, 'Too many checks from this connection. Try again in an hour.');
     const body = await readJson(req);
     const { errors, input } = validateInput(body);
+    if (body.source_text !== undefined && typeof body.source_text !== 'string') errors.push('The source statement must be text.');
+    else if (body.source_text?.trim().length > MAX_TEXT) errors.push(`Use at most ${MAX_TEXT.toLocaleString('en-US')} characters in the source statement.`);
     if (errors.length) return fail(400, errors[0], { errors });
     const report = await runCheck(env.DB, input);
-    if (typeof body.source_text === 'string' && body.source_text.trim()) report.source_text = body.source_text.trim().slice(0, MAX_TEXT);
+    if (typeof body.source_text === 'string' && body.source_text.trim()) report.source_text = body.source_text.trim();
     const hash = await reportHash(report);
     const id = newId();
     await env.DB.prepare('INSERT INTO reports (id, created_at, report_hash, body) VALUES (?, ?, ?, ?)')
@@ -171,11 +174,9 @@ const api = {
 
   'GET /api/company': async (req, env) => {
     const u = new URL(req.url);
-    const name = (u.searchParams.get('name') || '').slice(0, 120);
-    const aliases = u.searchParams.getAll('alias').slice(0, 4);
-    if (u.searchParams.getAll('alias').length > 4) return fail(400, 'Enter at most four other company names.');
-    const profile = await companyProfile(env.DB, name, aliases);
-    if (!profile) return fail(400, 'Enter a company name (3+ letters).');
+    const { errors, claimant, aliases } = validateCompanyNames(u.searchParams.get('name'), u.searchParams.getAll('alias'));
+    if (errors.length) return fail(400, errors[0], { errors });
+    const profile = await companyProfile(env.DB, claimant, aliases);
     return json(profile);
   },
 

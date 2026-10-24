@@ -19,6 +19,23 @@ export async function getDataset(db) {
   return first(db, 'SELECT source, generated_at, zip_sha256, projects, retirements FROM dataset WHERE id = 1');
 }
 
+export function validateCompanyNames(rawName, rawAliases = []) {
+  const errors = [];
+  const claimant = typeof rawName === 'string' ? rawName.trim() : '';
+  if (claimant.length > 120 || normalizeName(claimant).replace(/ /g, '').length < 3) {
+    errors.push('Enter a company name between 3 and 120 characters, including at least 3 Latin letters or numbers.');
+  }
+  if (!Array.isArray(rawAliases) || rawAliases.some((alias) => typeof alias !== 'string')) {
+    errors.push('Other company names must be text, one name per entry.');
+  }
+  const aliases = Array.isArray(rawAliases) ? rawAliases.filter((a) => typeof a === 'string').map((a) => a.trim()).filter(Boolean) : [];
+  if (aliases.length > 4) errors.push('Enter at most four other company names.');
+  if (aliases.some((alias) => alias.length > 120 || normalizeName(alias).replace(/ /g, '').length < 3)) {
+    errors.push('Each other company name must contain between 3 and 120 characters, including at least 3 Latin letters or numbers.');
+  }
+  return { errors, claimant, aliases };
+}
+
 function cleanClaim(c = {}) {
   if (!c || typeof c !== 'object' || Array.isArray(c)) c = {};
   const num = (v) => {
@@ -35,8 +52,8 @@ function cleanClaim(c = {}) {
     return n === null ? null : Number.isInteger(n) && n >= 1990 && n <= 2100 ? n : NaN;
   };
   return {
-    project_id: c.project_id ? String(c.project_id).trim().slice(0, 40) : null,
-    project_name: c.project_name ? String(c.project_name).trim().slice(0, 160) : null,
+    project_id: typeof c.project_id === 'string' ? c.project_id.trim() || null : null,
+    project_name: typeof c.project_name === 'string' ? c.project_name.trim() || null : null,
     vintage: year(c.vintage),
     tonnes: num(c.tonnes),
     year: year(c.year),
@@ -44,17 +61,17 @@ function cleanClaim(c = {}) {
 }
 
 export function validateInput(body) {
-  const errors = [];
-  const claimant = typeof body?.claimant === 'string' ? body.claimant.trim().slice(0, 120) : '';
-  if (normalizeName(claimant).length < 3) errors.push('Enter the company or organisation making the claim (3+ letters).');
-  const aliases = Array.isArray(body?.aliases) ? body.aliases.map((a) => String(a).trim().slice(0, 120)).filter(Boolean).slice(0, 4) : [];
-  if (Array.isArray(body?.aliases) && body.aliases.filter(Boolean).length > 4) errors.push('Enter at most four other company names.');
+  const { errors, claimant, aliases } = validateCompanyNames(body?.claimant, body?.aliases ?? []);
   const raw = Array.isArray(body?.claims) ? body.claims : [];
   if (!raw.length) errors.push('Add at least one claim.');
   if (raw.length > MAX_CLAIMS) errors.push(`At most ${MAX_CLAIMS} claims per check.`);
   const claims = raw.slice(0, MAX_CLAIMS).map(cleanClaim);
   claims.forEach((c, i) => {
     const n = i + 1;
+    if (raw[i]?.project_id != null && typeof raw[i].project_id !== 'string') errors.push(`Claim ${n}: project ID must be text.`);
+    if (raw[i]?.project_name != null && typeof raw[i].project_name !== 'string') errors.push(`Claim ${n}: project name must be text.`);
+    if (c.project_id?.length > 40) errors.push(`Claim ${n}: use at most 40 characters for the project ID.`);
+    if (c.project_name?.length > 160) errors.push(`Claim ${n}: use at most 160 characters for the project name.`);
     if (Number.isNaN(c.tonnes) || (c.tonnes !== null && (c.tonnes <= 0 || c.tonnes > Number.MAX_SAFE_INTEGER / 1000))) errors.push(`Claim ${n}: tonnes must be a positive number within the supported range.`);
     else if (c.tonnes !== null && Math.abs(c.tonnes * 1000 - Math.round(c.tonnes * 1000)) > 0.00001) errors.push(`Claim ${n}: use at most three decimal places for tonnes.`);
     if (Number.isNaN(c.vintage)) errors.push(`Claim ${n}: vintage must be a year like 2019.`);
@@ -97,9 +114,16 @@ async function matchedRows(db, variants, claim, projectId) {
   let limited = false;
   for (const v of variants) {
     const { where, args } = scopeSql(claim, projectId);
+    // The index stores the source text. An ampersand is a separator there, but
+    // normalizeName treats it as "and". Fetch both spellings, then verify the
+    // normalized phrase inside one source field below.
+    const words = v.split(' ').filter((word) => word !== 'and');
+    const search = words.length && v.split(' ').includes('and')
+      ? words.map((word) => `"${word}"`).join(' AND ')
+      : `"${v}"`;
     const rows = await all(db, `SELECT ${COLS} FROM retirements_fts f JOIN retirements r ON r.id = f.rowid
       WHERE retirements_fts MATCH ? ${where.map((w) => 'AND ' + w).join(' ')}
-      ORDER BY r.retired_on, r.id LIMIT ${MATCH_LIMIT}`, `"${v}"`, ...args);
+      ORDER BY r.retired_on, r.id LIMIT ${MATCH_LIMIT}`, search, ...args);
     if (rows.length >= MATCH_LIMIT) limited = true;
     for (const r of rows) {
       const matchedOn = whereMatched(r, v);

@@ -22,9 +22,11 @@ let selectedTab = 0;
 let pending = '';
 let datasetReady = false;
 let draftTimer;
+let extractionController;
 
 function selectTab(i, focus = false) {
   selectedTab = i;
+  if (i === 1) setSource($('#paste').value);
   tabs.forEach((tab, j) => {
     const on = i === j;
     tab.setAttribute('aria-selected', String(on));
@@ -47,8 +49,9 @@ tabs.forEach((tab, i) => {
 
 function updateControls() {
   const locked = Boolean(pending);
-  document.querySelectorAll('#paste-form input, #paste-form textarea, #check-form input, #check-form textarea, #check-form button, .sample, .tab, #enter-manually').forEach((el) => { el.disabled = locked; });
+  document.querySelectorAll('#paste-form input, #paste-form textarea, #check-form input, #check-form textarea, #check-form button, #form-notice button, .sample, .tab, #enter-manually').forEach((el) => { el.disabled = locked; });
   $('#extract-btn').disabled = locked;
+  $('#extract-cancel').hidden = pending !== 'extract';
   $('#check-btn').disabled = locked || !datasetReady;
   $('#add-row').disabled = locked || rows.children.length >= MAX_CLAIMS;
   $('#row-help').textContent = `${rows.children.length} of ${MAX_CLAIMS} claim rows${rows.children.length >= MAX_CLAIMS ? '. Remove a row to add another.' : '.'}`;
@@ -97,10 +100,8 @@ function fillForm({ claimant = '', aliases = [], claims = [], source = '' }, foc
   $('#aliases').value = aliases.join('\n');
   rows.replaceChildren();
   (claims.length ? claims : [{}]).slice(0, MAX_CLAIMS).forEach(addRow);
-  $('#source-text').value = source;
-  $('#source-preview').hidden = !source;
+  setSource(source);
   $('#source-preview').open = false;
-  $('#source-preview-text').textContent = source;
   $('#paste').value = source;
   $('#extract-msg').hidden = true;
   $('#paste').removeAttribute('aria-invalid');
@@ -109,6 +110,42 @@ function fillForm({ claimant = '', aliases = [], claims = [], source = '' }, foc
   hideCheckError();
   selectTab(1);
   if (focus) $('#claimant').focus();
+}
+
+function setSource(text) {
+  const source = text.trim();
+  $('#source-text').value = source;
+  $('#source-preview').hidden = !source;
+  $('#source-preview-text').textContent = source;
+}
+
+function captureInputs() {
+  return { ...readForm(), paste: $('#paste').value, tab: selectedTab };
+}
+
+function restoreInputs(inputs) {
+  fillForm({ ...inputs, source: inputs.source_text || '' }, false);
+  $('#paste').value = inputs.paste || '';
+  updateCharacterCount();
+  selectTab(inputs.tab === 1 ? 1 : 0);
+  saveDraft();
+}
+
+function offerUndo(inputs, message, keepNotice = false) {
+  const hasInput = inputs.claimant || inputs.aliases.length || inputs.paste.trim()
+    || inputs.claims.some((claim) => Object.values(claim).some((value) => value !== null && value !== ''));
+  const notice = $('#form-notice');
+  notice.hidden = !hasInput && !keepNotice;
+  notice.className = 'note';
+  notice.replaceChildren(message);
+  if (!hasInput) return;
+  notice.append(' ', h('button', {
+    type: 'button', class: 'btn btn-quiet', onclick: () => {
+      restoreInputs(inputs);
+      notice.textContent = 'Your previous inputs have been restored.';
+      notice.focus();
+    },
+  }, 'Restore previous inputs'));
 }
 
 const looksLikeId = (s) => /^\s*(vcs|verra|vcu|vm|gs|gld|gold\s?standard|car|climate action reserve|acr|american carbon registry|art\s?trees|art|trees|ccb|iso)[\s#:-]*(?:project\s*)?(?:id\s*)?[\s#:-]*\d/i.test(s)
@@ -177,17 +214,16 @@ $('#add-row').addEventListener('click', () => {
 });
 
 $('#clear-form').addEventListener('click', () => {
+  const previous = captureInputs();
   fillForm({});
   $('#extract-msg').hidden = true;
-  $('#form-notice').hidden = true;
+  offerUndo(previous, 'Form cleared.');
   saveDraft();
 });
 
 function enterManually() {
   const source = $('#paste').value.trim();
-  $('#source-text').value = source;
-  $('#source-preview').hidden = !source;
-  $('#source-preview-text').textContent = source;
+  setSource(source);
   const note = $('#review-note');
   note.className = 'note';
   note.textContent = source ? 'Your pasted text will be saved as the report source. Enter or update the details below to match it.' : 'Enter the details from the claim you want to check.';
@@ -198,6 +234,21 @@ function enterManually() {
 }
 
 $('#enter-manually').addEventListener('click', enterManually);
+$('#extract-cancel').addEventListener('click', () => extractionController?.abort());
+$('#edit-source').addEventListener('click', () => {
+  selectTab(0);
+  $('#paste').focus();
+});
+$('#remove-source').addEventListener('click', () => {
+  const previous = captureInputs();
+  setSource('');
+  $('#paste').value = '';
+  updateCharacterCount();
+  $('#review-note').hidden = true;
+  offerUndo(previous, 'Source text removed. It will not be saved with the report.');
+  $('#claimant').focus();
+  saveDraft();
+});
 
 $('#check-form').addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -248,10 +299,11 @@ $('#paste-form').addEventListener('submit', async (e) => {
     return;
   }
   pending = 'extract';
+  extractionController = new AbortController();
   busy($('#extract-btn'), true, 'Reading the claim…');
   updateControls();
   try {
-    const res = await api('/api/extract', { method: 'POST', body: { text } });
+    const res = await api('/api/extract', { method: 'POST', body: { text }, signal: extractionController.signal });
     if (!Array.isArray(res?.claims)) throw new Error('The AI returned an unreadable result. Try again or enter the details yourself.');
     if (!res.claims.length) {
       msg.className = 'note warn';
@@ -260,7 +312,9 @@ $('#paste-form').addEventListener('submit', async (e) => {
       msg.focus();
       return;
     }
+    const previous = captureInputs();
     fillForm({ claimant: res.claimant || '', claims: res.claims, source: text }, false);
+    offerUndo(previous, 'The suggested details replaced your previous inputs.');
     const dropped = Array.isArray(res.dropped) ? res.dropped : [];
     const info = $('#review-note');
     info.className = 'note';
@@ -275,6 +329,7 @@ $('#paste-form').addEventListener('submit', async (e) => {
     msg.append(' ', h('button', { type: 'button', class: 'btn btn-quiet', onclick: enterManually }, 'Enter the details yourself'));
     msg.focus();
   } finally {
+    extractionController = null;
     pending = '';
     busy($('#extract-btn'), false);
     updateControls();
@@ -288,6 +343,12 @@ function updateCharacterCount() { $('#paste-count').textContent = `${n($('#paste
 $('#paste').addEventListener('input', () => {
   $('#extract-msg').hidden = true;
   $('#paste').removeAttribute('aria-invalid');
+  setSource($('#paste').value);
+  if ($('#claimant').value || [...rows.children].some((row) => [...row.querySelectorAll('input')].some((input) => input.value))) {
+    $('#review-note').className = 'note warn';
+    $('#review-note').textContent = 'The source text changed. Review the details below against the current text before creating a report.';
+    $('#review-note').hidden = false;
+  }
   updateCharacterCount();
   saveDraftSoon();
 });
@@ -296,8 +357,9 @@ $('#check-form').addEventListener('input', () => { hideCheckError(); saveDraftSo
 $('#samples').append(...SAMPLES.map((sample) => h('button', {
   class: 'sample', type: 'button',
   onclick: () => {
+    const previous = captureInputs();
     fillForm(sample);
-    $('#form-notice').hidden = true;
+    offerUndo(previous, 'Registry example loaded.');
     const note = $('#review-note');
     note.className = 'note';
     note.textContent = 'Loaded a registry example. Review or change the details, then create a report. These inputs are not a quoted company claim.';
@@ -315,19 +377,50 @@ function saveDraftSoon() {
 function saveDraft() {
   clearTimeout(draftTimer);
   try {
-    sessionStorage.setItem(DRAFT_KEY, JSON.stringify({ ...readForm(), paste: $('#paste').value, tab: selectedTab }));
+    sessionStorage.setItem(DRAFT_KEY, JSON.stringify(captureInputs()));
   } catch { /* Private browsing or full storage must not prevent a check. */ }
 }
 
 function restoreDraft() {
   try {
     const draft = JSON.parse(sessionStorage.getItem(DRAFT_KEY) || 'null');
-    if (!draft || typeof draft !== 'object' || !Array.isArray(draft.claims)) return;
+    if (!draft || typeof draft !== 'object' || !Array.isArray(draft.claims)
+      || !draft.claims.every(isClaimInput)
+      || (draft.aliases !== undefined && (!Array.isArray(draft.aliases) || !draft.aliases.every((name) => typeof name === 'string')))) return;
     fillForm({ claimant: String(draft.claimant || '').slice(0, 120), aliases: Array.isArray(draft.aliases) ? draft.aliases.slice(0, 4).map(String) : [], claims: draft.claims, source: String(draft.source_text || '').slice(0, 6000) }, false);
-    $('#paste').value = String(draft.paste || '').slice(0, 6000);
+    $('#paste').value = String(typeof draft.paste === 'string' ? draft.paste : draft.source_text || '').slice(0, 6000);
     updateCharacterCount();
     selectTab(draft.tab === 1 ? 1 : 0);
   } catch { /* Ignore an invalid or unavailable session draft. */ }
+}
+
+function isClaimInput(claim) {
+  if (!claim || typeof claim !== 'object' || Array.isArray(claim)) return false;
+  return ['project', 'project_id', 'project_name'].every((field) => claim[field] == null || typeof claim[field] === 'string')
+    && ['tonnes', 'vintage', 'year'].every((field) => claim[field] == null || ['string', 'number'].includes(typeof claim[field]));
+}
+
+function savedReportInputs(report) {
+  if (!report || typeof report.claimant !== 'string' || !report.claimant.trim() || report.claimant.length > 120
+    || !Array.isArray(report.claims) || !report.claims.length || report.claims.length > MAX_CLAIMS
+    || !report.claims.every((claim) => claim && isClaimInput(claim.input)
+      && (claim.input.project?.trim() || claim.input.project_id?.trim() || claim.input.project_name?.trim() || (claim.input.tonnes != null && claim.input.tonnes !== '')))
+    || (report.aliases !== undefined && (!Array.isArray(report.aliases) || report.aliases.length > 4 || !report.aliases.every((name) => typeof name === 'string' && name.length <= 120)))
+    || (report.source_text !== undefined && (typeof report.source_text !== 'string' || report.source_text.length > 6000))) {
+    throw new Error('The saved report has no readable claim inputs.');
+  }
+  return { claimant: report.claimant, aliases: report.aliases || [], claims: report.claims.map((claim) => claim.input), source: report.source_text || '' };
+}
+
+function validDataset(dataset) {
+  if (!dataset || typeof dataset.source !== 'string' || !dataset.source.trim()
+    || !Number.isSafeInteger(dataset.retirements) || dataset.retirements <= 0
+    || typeof dataset.generated_at !== 'string'
+    || !/^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2}))?$/.test(dataset.generated_at)) return false;
+  const dateOnly = dataset.generated_at.slice(0, 10);
+  const date = new Date(dateOnly + 'T00:00:00Z');
+  return Number.isFinite(Date.parse(dataset.generated_at)) && Number.isFinite(date.getTime())
+    && date.toISOString().slice(0, 10) === dateOnly;
 }
 
 async function loadRegistry() {
@@ -339,9 +432,9 @@ async function loadRegistry() {
   stamp.textContent = 'Checking registry data availability…';
   updateControls();
   const data = await loadDataset();
-  if (data?.dataset?.generated_at && Number(data.dataset.retirements) > 0) {
+  if (validDataset(data?.dataset)) {
     datasetReady = true;
-    stamp.replaceChildren(h('span', {}, 'CarbonPlan OffsetsDB snapshot: ', h('b', {}, day(data.dataset.generated_at.slice(0, 10)))), h('span', {}, h('b', {}, n(data.dataset.retirements)), ' retirement records'), h('a', { href: '/docs.html#coverage' }, 'Coverage and limits'));
+    stamp.replaceChildren(h('span', {}, `${data.dataset.source} snapshot: `, h('b', {}, day(data.dataset.generated_at.slice(0, 10)))), h('span', {}, h('b', {}, n(data.dataset.retirements)), ' retirement records'), h('a', { href: '/docs.html#coverage' }, 'Coverage and limits'));
   } else {
     stamp.className = 'note warn';
     stamp.textContent = 'Registry data is unavailable right now. Your inputs are kept in this tab; retry to run a check.';
@@ -355,6 +448,7 @@ async function loadLinkedInputs() {
   const edit = params.get('edit');
   const claimant = params.get('claimant');
   const notice = $('#form-notice');
+  const previous = captureInputs();
   if (edit !== null) {
     selectTab(1);
     notice.hidden = false;
@@ -368,10 +462,9 @@ async function loadLinkedInputs() {
     updateControls();
     try {
       const { report } = await api(`/api/report/${encodeURIComponent(edit)}`);
-      if (!report?.claimant || !Array.isArray(report.claims)) throw new Error('The saved report has no readable claim inputs.');
-      fillForm({ claimant: report.claimant, aliases: report.aliases || [], claims: report.claims.map((c) => c.input), source: report.source_text || '' }, false);
-      notice.className = 'note';
-      notice.replaceChildren('Loaded the inputs from ', h('a', { href: `/r/${edit}` }, 'your report'), '. Changes create a new report.');
+      const inputs = savedReportInputs(report);
+      fillForm(inputs, false);
+      offerUndo(previous, h('span', {}, 'Loaded the inputs from ', h('a', { href: `/r/${edit}` }, 'your report'), '. Changes create a new report.'), true);
       saveDraft();
     } catch (err) {
       notice.className = 'note bad';
@@ -382,8 +475,7 @@ async function loadLinkedInputs() {
     }
   } else if (claimant) {
     fillForm({ claimant: claimant.slice(0, 120), aliases: params.getAll('alias').slice(0, 4).map((alias) => alias.slice(0, 120)) }, false);
-    notice.textContent = `Enter the carbon credits claimed by ${claimant.slice(0, 120)} below.`;
-    notice.hidden = false;
+    offerUndo(previous, `Enter the carbon credits claimed by ${claimant.slice(0, 120)} below.`, true);
     saveDraft();
   }
 }

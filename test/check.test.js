@@ -30,6 +30,39 @@ test('zero, malformed, excessive-precision and nonnumeric quantities cannot prod
   assert.ok(validateInput(input([null])).errors.length);
 });
 
+test('check inputs never silently shorten company names, aliases or project names', () => {
+  const base = input([claim(100)]);
+  for (const body of [
+    { ...base, claimant: 'a'.repeat(121) },
+    { ...base, claimant: '---', aliases: ['Valid Company'] },
+    { ...base, aliases: ['a'.repeat(121)] },
+    { ...base, aliases: ['--'] },
+    { ...base, aliases: [42] },
+    { ...base, aliases: 'Other Company' },
+    { ...base, claims: [{ project_name: 'a'.repeat(161), tonnes: 100 }] },
+    { ...base, claims: [{ project_id: ['CAR1335'], tonnes: 100 }] },
+  ]) assert.ok(validateInput(body).errors.length, JSON.stringify(body));
+  assert.equal(validateInput({ ...base, aliases: ['  Trading Name  ', ''] }).input.aliases[0], 'Trading Name');
+});
+
+test('ampersand and written-and company names find the same source records without false attribution', async () => {
+  const db = fixture();
+  try {
+    db.exec(`INSERT INTO retirements (id, project_id, quantity, shown_as, retired_on, who)
+      VALUES (2, 'CAR1335', 80, 'Marks & Spencer plc', '2023-02-01', 'Marks & Spencer plc'),
+             (3, 'CAR1335', 20, 'Spencer Marks', '2023-02-01', 'Spencer Marks');
+      INSERT INTO retirements_fts (rowid, who) VALUES (2, 'Marks & Spencer plc'), (3, 'Spencer Marks');`);
+    for (const name of ['Marks and Spencer', 'Marks & Spencer']) {
+      const result = await companyProfile(db, name);
+      assert.equal(result.retirements, 1);
+      assert.equal(result.tonnes, 80);
+    }
+    const report = await runCheck(db, { claimant: 'Marks and Spencer', aliases: [], claims: [claim(80)] });
+    assert.equal(report.claims[0].verdict, 'backed');
+    assert.equal(report.claims[0].rows[0].id, 2);
+  } finally { db.raw.close(); }
+});
+
 test('a quantity shortfall is visible even when less than half a percent', async () => {
   const db = fixture();
   try {
@@ -130,5 +163,31 @@ test('missing snapshot and invalid report links return the correct status', asyn
     assert.equal(dataset.status, 503);
     const report = await worker.fetch(new Request('https://test.local/api/report/missing'), { DB: db });
     assert.equal(report.status, 404);
+  } finally { db.raw.close(); }
+});
+
+test('company lookup rejects invalid identities instead of silently searching a different name', async () => {
+  const db = fixture();
+  try {
+    for (const params of [
+      { name: 'x'.repeat(121) }, { name: '---', alias: 'Example Company' },
+      { name: 'Example Company', alias: 'ab' }, { name: 'Example Company', alias: 'x'.repeat(121) },
+    ]) {
+      const response = await worker.fetch(new Request(`https://test.local/api/company?${new URLSearchParams(params)}`), { DB: db });
+      assert.equal(response.status, 400);
+      assert.match((await response.json()).error, /company name/);
+    }
+  } finally { db.raw.close(); }
+});
+
+test('source statements are saved in full or rejected with a useful limit error', async () => {
+  const db = fixture();
+  try {
+    const response = await worker.fetch(new Request('https://test.local/api/check', {
+      method: 'POST', body: JSON.stringify({ ...input([claim(100)]), source_text: 'x'.repeat(6001) }),
+    }), { DB: db });
+    assert.equal(response.status, 400);
+    assert.match((await response.json()).error, /6,000 characters/);
+    assert.equal(db.raw.prepare('SELECT COUNT(*) n FROM reports').get().n, 0);
   } finally { db.raw.close(); }
 });
