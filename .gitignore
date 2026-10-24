@@ -7,3 +7,4 @@ data/*.sql
 .codex-pass.md
 data/*.log
 .codex-pass.md
+data/*.sqlite
