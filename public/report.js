@@ -217,10 +217,11 @@ function renderReport(data) {
       h('div', {}, h('div', { class: 'k' }, 'Tonnes claimed'), h('div', { class: 'v' }, hasAmount ? t(r.summary.tonnes_claimed) : 'Not specified')),
       h('div', {}, h('div', { class: 'k' }, hasAmount ? 'Matched to stated amounts' : 'Matching tonnes'), h('div', { class: 'v' }, t(hasAmount ? r.summary.tonnes_backed : found))),
       h('div', {}, h('div', { class: 'k' }, 'Snapshot date'), h('div', { class: 'v', style: 'font-size:1.05rem' }, day(r.dataset.generated_at)))),
-    ...r.claims.map(claimCard),
-    ...(r.source_text ? [h('details', { class: 'section card card-pad' }, h('summary', {}, 'Original text supplied for this check'), h('p', { style: 'white-space:pre-wrap;overflow-wrap:anywhere' }, r.source_text))] : []),
-    proofPanel(data),
-    chainPanel(data));
+    h('div', { class: 'report-grid' },
+      h('div', { class: 'report-main' },
+        ...r.claims.map(claimCard),
+        ...(r.source_text ? [h('details', { class: 'section card card-pad' }, h('summary', {}, 'Original text supplied for this check'), h('p', { style: 'white-space:pre-wrap;overflow-wrap:anywhere' }, r.source_text))] : [])),
+      h('aside', { class: 'report-aside', 'aria-label': 'Verification' }, proofPanel(data), chainPanel(data))));
 }
 
 async function render() {

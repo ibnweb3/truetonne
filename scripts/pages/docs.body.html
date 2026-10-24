@@ -1,4 +1,7 @@
-<main class="wrap narrow prose" id="main">
+<main class="wrap" id="main">
+  <div class="docs-layout">
+  <nav class="toc" aria-label="On this page"><b>On this page</b><a href="#what-it-checks">What it checks</a><a href="#how-to-read-a-result">How to read a result</a><a href="#coverage">Data and coverage</a><a href="#matching">Matching</a><a href="#the-ai-step">The AI step</a><a href="#information-you-submit">Information you submit</a><a href="#the-on-chain-record">The on-chain record</a><a href="#limits-you-should-know">Limits you should know</a><a href="#code">Code</a></nav>
+  <div class="prose">
   <section class="hero">
     <h1>Method, data and limits</h1>
     <p class="lede">Understand what a result means before you rely on it. TrueTonne compares carbon-credit claims with a dated copy of public registry records.</p>
@@ -8,11 +11,11 @@
     <b>A match is evidence of a registry record.</b> It does not prove that a company is carbon neutral, that a project delivered its promised climate benefit, or that the same credits have never been claimed elsewhere.
   </div>
 
-  <h2>What it checks</h2>
+  <h2 id="what-it-checks">What it checks</h2>
   <p>A retirement is a registry entry showing that carbon credits have been taken out of circulation. TrueTonne looks for retirements that name the company making a claim, then compares the recorded tonnes with the amount claimed. You can narrow the check to a project, a credit vintage and a retirement year.</p>
   <p>A credit <b>vintage</b> is the year associated with the credit’s climate benefit. The <b>retirement year</b> is when the credit was taken out of circulation. These can be different years. One tonne means one metric tonne of carbon dioxide equivalent (tCO₂e).</p>
 
-  <h2>How to read a result</h2>
+  <h2 id="how-to-read-a-result">How to read a result</h2>
   <ul>
     <li><b>Quantity matched:</b> matching registry records cover the full stated quantity. Quantities are compared to three decimal places. Review any warnings and the matched project before drawing a conclusion.</li>
     <li><b>Partly backed:</b> some of the stated quantity has matching records. The report shows the amount without a match.</li>
@@ -28,7 +31,7 @@
     <li>CarbonPlan claims no copyright in the data. The registries may claim rights in their own records; this site shows short extracts with a link to the registry.</li>
   </ul>
 
-  <h2>Matching</h2>
+  <h2 id="matching">Matching</h2>
   <ol>
     <li><b>Project.</b> By registry ID (VCS562, GS1234, CAR1480 and similar forms), or by name through full-text search. If several projects match a name, the check asks you to use a specific project ID instead of choosing one for you.</li>
     <li><b>Company name.</b> A retirement counts only if the beneficiary, retiring account or retirement note names the company (legal suffixes such as Inc or AB are ignored). An account may belong to an intermediary acting for a client; a name match alone does not establish ownership of the benefit. The snapshot has <b>no credit serial numbers</b>, so matching is by project, vintage, retirement year and name, not by individual credit.</li>
@@ -36,19 +39,19 @@
     <li><b>Flags.</b> Retired more than issued; claimant is the account that retired on behalf of a client; claim dated after the snapshot; retirement matched only through a free-text note.</li>
   </ol>
 
-  <h2>The AI step</h2>
+  <h2 id="the-ai-step">The AI step</h2>
   <p>When you choose to read a pasted statement, its text is sent to Cloudflare Workers AI to extract the company name and claim details. Values are checked against the source text; unsupported project IDs, project names, quantities and years are discarded and shown to you. This does not guarantee the model attached every value to the right claim. Review and correct the details before running a check.</p>
   <p>You can enter claims yourself without using AI. The comparison with registry records follows the same rules either way.</p>
 
-  <h2>Information you submit</h2>
+  <h2 id="information-you-submit">Information you submit</h2>
   <p>Running a check saves a report containing the company, claim details, matching records and any source text included with the check. Anyone with the report link can read and download it. Use public claims, and leave out confidential or personal information. Company lookup searches do not create a report.</p>
 
-  <h2>The on-chain record</h2>
+  <h2 id="the-on-chain-record">The on-chain record</h2>
   <p>Recording is optional and takes place on Base Sepolia, a test network. It stores a fingerprint of the report and reserves the matched tonnes within the TrueTonne contract. If another company has already reserved those tonnes there, the contract blocks the overlapping allocation. A report can still be recorded even when some of its allocations are blocked; read the transaction result.</p>
   <p>The record supports up to 80 retirement rows per report. Any rows beyond that limit are not reserved on-chain. It does not transfer carbon credits, certify a claim or update an official registry. Only reports recorded in this contract participate in this check for overlapping allocations.</p>
   <p>For technical verification, reports use canonical JSON with a SHA-256 fingerprint that can be recalculated in your browser. The <span class="mono">TonneLedger</span> contract stores normalized company-name hashes and milli-tonne quantities. Company names and source statements remain readable in the saved report. Only the service’s authorized signer can write to the contract.</p>
 
-  <h2>Limits you should know</h2>
+  <h2 id="limits-you-should-know">Limits you should know</h2>
   <ul>
     <li>A retirement naming a company is evidence the credits were retired, not that the company's footprint is offset, and not that the project is good.</li>
     <li>Registries record beneficiaries inconsistently. Many retirements name nobody, so an honest claim can show a gap.</li>
@@ -58,6 +61,8 @@
     <li>The report page lists up to 60 backing retirement records per claim. The downloadable JSON also contains the complete allocation used by the calculation.</li>
   </ul>
 
-  <h2>Code</h2>
+  <h2 id="code">Code</h2>
   <p>Open source at <a href="https://github.com/ibnweb3/truetonne" rel="noopener">github.com/ibnweb3/truetonne</a>. Reports link to the test-network contract when recording is available.</p>
+  </div>
+  </div>
 </main>
