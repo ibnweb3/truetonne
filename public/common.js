@@ -93,3 +93,6 @@ export function busy(btn, on, text) {
 export async function loadDataset() {
   try { return await api('/api/dataset'); } catch { return null; }
 }
+
+const REGISTRIES = { 'climate-action-reserve': 'Climate Action Reserve', 'american-carbon-registry': 'American Carbon Registry', 'art-trees': 'ART TREES', verra: 'Verra', 'gold-standard': 'Gold Standard', 'global-carbon-council': 'Global Carbon Council' };
+export const registryName = (r) => REGISTRIES[r] || r || '';

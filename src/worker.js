@@ -129,7 +129,7 @@ export default {
     const url = new URL(req.url);
     if (url.pathname.startsWith('/r/')) {
       // Report permalinks are a static page that loads the report by ID.
-      return env.ASSETS.fetch(new Request(new URL('/report.html', url), req));
+      return env.ASSETS.fetch(new Request(new URL('/report', url), req));
     }
     if (!url.pathname.startsWith('/api/')) return env.ASSETS.fetch(req);
     if (req.method === 'POST') {

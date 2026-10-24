@@ -1,4 +1,4 @@
-import { $, h, api, busy, t, day, verdictBadge, VERDICTS, FLAGS, canonical, sha256Hex } from './common.js';
+import { $, h, api, busy, t, day, verdictBadge, registryName, VERDICTS, FLAGS, canonical, sha256Hex } from './common.js';
 
 const id = location.pathname.split('/').pop();
 const main = $('#main');
@@ -12,7 +12,7 @@ function claimCard(c) {
   return h('article', { class: 'card claim' },
     h('div', { class: 'claim-head' },
       h('div', {}, h('h3', {}, `Claim ${c.n}: ${title}`),
-        h('p', { class: 'meta' }, [p && [p.registry, p.country, p.type].filter(Boolean).join(' · '), scopeBits].filter(Boolean).join(' — '))),
+        h('p', { class: 'meta' }, [p && [registryName(p.registry), p.country, p.type].filter(Boolean).join(' · '), scopeBits].filter(Boolean).join(' — '))),
       verdictBadge(c.verdict)),
     h('div', { class: 'claim-body' },
       h('p', {}, v ? v.say(c) : ''),

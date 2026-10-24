@@ -8,5 +8,6 @@
     { "binding": "DB", "database_name": "truetonne", "database_id": "85801420-8088-470c-aa94-9637a96c4f83" }
   ],
   "ai": { "binding": "AI" },
+  "vars": { "LEDGER_ADDRESS": "0x9436A63fb5f3c04225303F528D1D54802A455572" },
   "observability": { "enabled": true }
 }

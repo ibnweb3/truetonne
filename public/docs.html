@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Method, data and limits · TrueTonne</title>
+<meta name="description" content="How TrueTonne matches carbon-credit claims to registry retirements, the data it uses and what it cannot tell you.">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="/"><svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="7" fill="var(--accent)"/><path d="M9 16.5l4.5 4.5L23 11.5" fill="none" stroke="var(--accent-ink)" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg>TrueTonne</a>
+    <nav class="nav" aria-label="Main">
+      <a href="/">Check a claim</a>
+      <a href="/company.html">Company lookup</a>
+      <a href="/docs.html" aria-current="page" class="hide-sm">Method &amp; data</a>
+      <a href="https://github.com/ibnweb3/truetonne" class="hide-sm">GitHub</a>
+    </nav>
+  </div>
+</header>
+<main class="wrap narrow prose" id="main">
+  <section class="hero">
+    <h1>Method, data and limits</h1>
+    <p class="lede">What TrueTonne checks, how, and what it cannot tell you. Everything here is reproducible from the public repository.</p>
+  </section>
+
+  <h2>What it checks</h2>
+  <p>A company says it retired some tonnes of carbon credits. TrueTonne asks one narrow question: <b>do public registry records show retirements that name this company, for those projects, vintages and years, in at least those quantities?</b> It checks paperwork. It does not judge whether a project removes any carbon.</p>
+
+  <h2>Data</h2>
+  <ul>
+    <li>CarbonPlan OffsetsDB, a compilation of the Verra, Gold Standard, ACR, CAR and ART registries. Snapshot of 1 June 2026: 495,403 retirements across 11,659 projects.</li>
+    <li>CarbonPlan has paused updates because registry data access changed (<a href="https://github.com/carbonplan/offsets-db-data/issues/174" rel="noopener">offsets-db-data#174</a>). TrueTonne therefore cannot see retirements after the snapshot, and says so when a claim is dated later.</li>
+    <li>CarbonPlan claims no copyright in the data. The registries may claim rights in their own records; this site shows short extracts with a link to the registry.</li>
+  </ul>
+
+  <h2>Matching</h2>
+  <ol>
+    <li><b>Project.</b> By registry ID (VCS562, GS1234, CAR1480 and similar forms), or by name through full-text search. Name matches are flagged so you can confirm them.</li>
+    <li><b>Claimant.</b> A retirement counts only if the beneficiary, account or note field names the claimant (legal suffixes such as Inc or AB are ignored). The snapshot has <b>no serial numbers</b>, so matching is by project, vintage, retirement year and name, not by individual credit.</li>
+    <li><b>Allocation.</b> One retired tonne can back one claim within a report. If two claims in the same report match the same retirement, the second is shown as already counted.</li>
+    <li><b>Flags.</b> Retired more than issued; claimant is the account that retired on behalf of a client; claim dated after the snapshot; retirement matched only through a free-text note.</li>
+  </ol>
+
+  <h2>The AI step</h2>
+  <p>Pasted text goes to Llama 3.3 70B on Cloudflare Workers AI, which only extracts claims into a fixed JSON shape. Any project ID, project name, tonnage or year that does not appear literally in your text is discarded and listed back to you. You review the claims before anything is checked. The model decides nothing about the verdict.</p>
+
+  <h2>The on-chain record</h2>
+  <p>Every report is canonical JSON hashed with SHA-256. You can re-hash it in your browser on the report page. Recording a report on Base Sepolia (a test network) calls <span class="mono">TonneLedger</span>, which keeps a cap in milli-tonnes per retirement row. The first claimant to record a row holds those tonnes; a later claimant asking for more than remains is refused and the contract logs a <span class="mono">DoubleClaimBlocked</span> event. Claimants are stored as the hash of their normalized name, not the name.</p>
+  <p>Only the server's attester key can write to the contract. This is a test-network demonstration of the mechanism, not a production registry.</p>
+
+  <h2>Limits you should know</h2>
+  <ul>
+    <li>A retirement naming a company is evidence the credits were retired, not that the company's footprint is offset, and not that the project is good.</li>
+    <li>Registries record beneficiaries inconsistently. Many retirements name nobody, so an honest claim can show a gap.</li>
+    <li>The double-claim block only works between reports recorded on this contract. It does not see claims made anywhere else.</li>
+    <li>Name matching can confuse companies that share a name. The report shows every matched row so you can check.</li>
+  </ul>
+
+  <h2>Code</h2>
+  <p>Open source at <a href="https://github.com/ibnweb3/truetonne" rel="noopener">github.com/ibnweb3/truetonne</a>. The contract address is linked at the bottom of every report.</p>
+</main>
+
+<footer class="foot">
+  <div class="wrap">
+    <span>TrueTonne checks paperwork, not project quality. Registry data © the registries, compiled by CarbonPlan OffsetsDB.</span>
+    <span><a href="/docs.html">Method, data and limits</a></span>
+  </div>
+</footer>
+</body>
+</html>

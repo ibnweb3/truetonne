@@ -1,0 +1,20 @@
+<main class="wrap" id="main">
+  <section class="hero">
+    <h1>What has this company retired?</h1>
+    <p class="lede">Look up every retirement in the registry snapshot that names a company, by year and by project. This is a profile, not a verdict: use the claim check to test a specific statement.</p>
+  </section>
+  <section class="section card card-pad" aria-labelledby="lookup-h">
+    <h2 id="lookup-h" class="sr-only">Company lookup</h2>
+    <form id="lookup" novalidate>
+      <div class="row2">
+        <div class="field"><label for="name">Company name</label>
+          <input id="name" name="name" required minlength="3" maxlength="120" autocomplete="organization" spellcheck="false" placeholder="e.g. Microsoft"></div>
+        <div class="field"><label for="alias">Other names <span class="hint">(optional, comma separated)</span></label>
+          <input id="alias" name="alias" maxlength="300" autocomplete="off" spellcheck="false" placeholder="e.g. Microsoft Corporation"></div>
+      </div>
+      <div class="actions"><button class="btn btn-primary" type="submit" id="go">Look up</button></div>
+      <div class="note bad" id="msg" role="alert" hidden style="margin-top:14px"></div>
+    </form>
+  </section>
+  <div id="result" aria-live="polite"></div>
+</main>
