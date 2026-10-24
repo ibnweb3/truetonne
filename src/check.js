@@ -6,7 +6,6 @@ import { normalizeProjectId, normalizeName, nameVariants } from './names.js';
 export const MAX_CLAIMS = 12;
 const ROWS_IN_REPORT = 60; // backing rows listed per claim; allocation still uses all of them
 const MATCH_LIMIT = 5000;  // matched rows fetched per name variant
-const TOLERANCE = 0.005;   // 0.5% rounding slack before a claim counts as short
 
 const COLS = 'r.id, r.project_id, r.vintage, r.quantity, r.shown_as, r.account, r.note, r.reason, r.retired_on';
 
@@ -21,9 +20,14 @@ export async function getDataset(db) {
 }
 
 function cleanClaim(c = {}) {
+  if (!c || typeof c !== 'object' || Array.isArray(c)) c = {};
   const num = (v) => {
     if (v === null || v === undefined || v === '') return null;
-    const n = Number(String(v).replace(/[,\s_]/g, ''));
+    if (!['string', 'number'].includes(typeof v)) return NaN;
+    const text = String(v).trim();
+    if (!text) return null;
+    if (!/^(?:\d+|\d{1,3}(?:,\d{3})+)(?:\.\d+)?$/.test(text)) return NaN;
+    const n = Number(text.replace(/,/g, ''));
     return Number.isFinite(n) && n >= 0 ? n : NaN;
   };
   const year = (v) => {
@@ -41,18 +45,21 @@ function cleanClaim(c = {}) {
 
 export function validateInput(body) {
   const errors = [];
-  const claimant = String(body?.claimant || '').trim().slice(0, 120);
+  const claimant = typeof body?.claimant === 'string' ? body.claimant.trim().slice(0, 120) : '';
   if (normalizeName(claimant).length < 3) errors.push('Enter the company or organisation making the claim (3+ letters).');
   const aliases = Array.isArray(body?.aliases) ? body.aliases.map((a) => String(a).trim().slice(0, 120)).filter(Boolean).slice(0, 4) : [];
+  if (Array.isArray(body?.aliases) && body.aliases.filter(Boolean).length > 4) errors.push('Enter at most four other company names.');
   const raw = Array.isArray(body?.claims) ? body.claims : [];
   if (!raw.length) errors.push('Add at least one claim.');
   if (raw.length > MAX_CLAIMS) errors.push(`At most ${MAX_CLAIMS} claims per check.`);
   const claims = raw.slice(0, MAX_CLAIMS).map(cleanClaim);
   claims.forEach((c, i) => {
     const n = i + 1;
-    if (Number.isNaN(c.tonnes)) errors.push(`Claim ${n}: tonnes must be a positive number.`);
+    if (Number.isNaN(c.tonnes) || (c.tonnes !== null && (c.tonnes <= 0 || c.tonnes > Number.MAX_SAFE_INTEGER / 1000))) errors.push(`Claim ${n}: tonnes must be a positive number within the supported range.`);
+    else if (c.tonnes !== null && Math.abs(c.tonnes * 1000 - Math.round(c.tonnes * 1000)) > 0.00001) errors.push(`Claim ${n}: use at most three decimal places for tonnes.`);
     if (Number.isNaN(c.vintage)) errors.push(`Claim ${n}: vintage must be a year like 2019.`);
     if (Number.isNaN(c.year)) errors.push(`Claim ${n}: retirement year must be a year like 2023.`);
+    if (c.vintage && c.year && c.vintage > c.year) errors.push(`Claim ${n}: retirement year cannot be earlier than the credit vintage.`);
     if (c.project_id && !normalizeProjectId(c.project_id)) errors.push(`Claim ${n}: "${c.project_id}" is not a project ID we recognise (try VCS1477, GS1247, CAR1335, ACR123).`);
     if (!c.project_id && !c.project_name && c.tonnes === null) errors.push(`Claim ${n}: give a project, or at least the tonnes claimed.`);
   });
@@ -71,7 +78,8 @@ async function resolveProject(db, claim) {
   const q = words.map((w) => `"${w}"`).join(' AND ');
   const hits = await all(db, `SELECT p.project_id, p.name, p.registry, p.country FROM projects_fts f
     JOIN projects p ON p.rowid = f.rowid WHERE projects_fts MATCH ? ORDER BY rank LIMIT 5`, q);
-  const project = hits.length ? await first(db, 'SELECT * FROM projects WHERE project_id = ?', hits[0].project_id) : null;
+  // An ambiguous name must never silently select a different project's evidence.
+  const project = hits.length === 1 ? await first(db, 'SELECT * FROM projects WHERE project_id = ?', hits[0].project_id) : null;
   return { project, resolved_by: 'name', wanted: claim.project_name, candidates: hits };
 }
 
@@ -86,14 +94,20 @@ function scopeSql(claim, projectId) {
 
 async function matchedRows(db, variants, claim, projectId) {
   const byId = new Map();
+  let limited = false;
   for (const v of variants) {
     const { where, args } = scopeSql(claim, projectId);
     const rows = await all(db, `SELECT ${COLS} FROM retirements_fts f JOIN retirements r ON r.id = f.rowid
       WHERE retirements_fts MATCH ? ${where.map((w) => 'AND ' + w).join(' ')}
       ORDER BY r.retired_on, r.id LIMIT ${MATCH_LIMIT}`, `"${v}"`, ...args);
-    for (const r of rows) if (!byId.has(r.id)) byId.set(r.id, { ...r, matched_on: whereMatched(r, v) });
+    if (rows.length >= MATCH_LIMIT) limited = true;
+    for (const r of rows) {
+      const matchedOn = whereMatched(r, v);
+      // FTS phrases can span two concatenated fields. Require a real field-level match.
+      if (matchedOn && !byId.has(r.id)) byId.set(r.id, { ...r, matched_on: matchedOn });
+    }
   }
-  return [...byId.values()].sort((a, b) => (a.retired_on || '').localeCompare(b.retired_on || '') || a.id - b.id);
+  return Object.assign([...byId.values()].sort((a, b) => (a.retired_on || '').localeCompare(b.retired_on || '') || a.id - b.id), { limited });
 }
 
 // Which field named the claimant: the registry beneficiary field, the account holder, or only the free-text note.
@@ -101,7 +115,8 @@ function whereMatched(r, variant) {
   const has = (s) => s && ` ${normalizeName(s)} `.includes(` ${variant} `);
   if (has(r.shown_as)) return 'beneficiary';
   if (has(r.account)) return 'account';
-  return 'note';
+  if (has(r.note)) return 'note';
+  return null;
 }
 
 async function othersInScope(db, claim, projectId) {
@@ -119,9 +134,8 @@ async function othersInScope(db, claim, projectId) {
 
 function verdictFor({ claimed, backed, matched, scopeTotal, project, wantsProject }) {
   if (wantsProject && !project) return 'project_not_found';
-  if (claimed === null) return matched > 0 ? 'found' : scopeTotal > 0 ? 'not_attributed' : 'no_retirements';
-  if (claimed === 0) return 'backed';
-  if (backed >= claimed * (1 - TOLERANCE)) return 'backed';
+  if (claimed === null) return backed > 0 ? 'found' : matched > 0 ? 'used_by_earlier_claim' : scopeTotal > 0 ? 'not_attributed' : 'no_retirements';
+  if (round(backed) >= claimed) return 'backed';
   if (backed > 0) return 'partly_backed';
   if (matched > 0) return 'used_by_earlier_claim';
   return scopeTotal > 0 ? 'not_attributed' : 'no_retirements';
@@ -129,6 +143,7 @@ function verdictFor({ claimed, backed, matched, scopeTotal, project, wantsProjec
 
 export async function runCheck(db, input, { now = new Date() } = {}) {
   const dataset = await getDataset(db);
+  if (!dataset) throw Object.assign(new Error('Registry data is not available right now. Please try again later.'), { status: 503 });
   const variants = nameVariants(input.claimant, input.aliases);
   const snapshotYear = Number(String(dataset.generated_at).slice(0, 4));
   const remaining = new Map(); // retirement row id -> tonnes not yet used by an earlier claim in this report
@@ -165,7 +180,8 @@ export async function runCheck(db, input, { now = new Date() } = {}) {
       used.push({ r, take });
     }
 
-    const verdict = verdictFor({ claimed: claim.tonnes, backed, matched: matchedTotal, scopeTotal: scope.retired_total, project: res.project, wantsProject });
+    const verdict = !res.project && res.candidates.length > 1 ? 'project_ambiguous'
+      : verdictFor({ claimed: claim.tonnes, backed, matched: matchedTotal, scopeTotal: scope.retired_total, project: res.project, wantsProject });
 
     if (res.resolved_by === 'name' && res.project) flags.push('project_matched_by_name');
     if (pv && pv.issued > 0 && pv.retired > pv.issued * 1.001) flags.push('retired_exceeds_issued');
@@ -176,7 +192,7 @@ export async function runCheck(db, input, { now = new Date() } = {}) {
     const thirdParty = used.filter(({ r }) => /third party/i.test(r.reason || ''));
     if (thirdParty.some(({ r }) => r.matched_on === 'account')) flags.push('claimant_retired_for_someone_else');
     else if (thirdParty.length) flags.push('retired_by_intermediary');
-    if (matched.length >= MATCH_LIMIT) flags.push('match_limit_reached');
+    if (matched.limited) flags.push('match_limit_reached');
     if (claim.tonnes !== null && matchedTotal > backed && backed < need) flags.push('rows_shared_with_earlier_claim');
     if (!wantsProject) flags.push('company_wide');
 
@@ -187,7 +203,7 @@ export async function runCheck(db, input, { now = new Date() } = {}) {
         id: res.project.project_id, name: res.project.name, registry: res.project.registry, country: res.project.country,
         type: unescape(res.project.project_type), category: res.project.category, status: res.project.status, url: res.project.url,
       } : null,
-      project_lookup: { resolved_by: res.resolved_by, wanted: res.wanted, candidates: res.candidates.slice(1) },
+      project_lookup: { resolved_by: res.resolved_by, wanted: res.wanted, candidates: res.project ? res.candidates.slice(1) : res.candidates },
       verdict,
       claimed: claim.tonnes,
       backed: round(backed),
@@ -232,6 +248,8 @@ export async function runCheck(db, input, { now = new Date() } = {}) {
 export async function companyProfile(db, name, aliases = []) {
   const variants = nameVariants(name, aliases);
   if (!variants.length) return null;
+  const dataset = await getDataset(db);
+  if (!dataset) throw Object.assign(new Error('Registry data is not available right now. Please try again later.'), { status: 503 });
   const rows = await matchedRows(db, variants, { vintage: null, year: null }, null);
   const byYear = {};
   const byProject = {};
@@ -245,9 +263,10 @@ export async function companyProfile(db, name, aliases = []) {
   const nameOf = Object.fromEntries(names.map((p) => [p.project_id, p]));
   return {
     name, variants,
+    dataset,
     retirements: rows.length,
     tonnes: round(rows.reduce((s, r) => s + r.quantity, 0)),
-    limited: rows.length >= MATCH_LIMIT,
+    limited: rows.limited,
     by_year: Object.entries(byYear).sort((a, b) => a[0].localeCompare(b[0])).map(([year, tonnes]) => ({ year, tonnes })),
     top_projects: ids.map(([id, tonnes]) => ({ id, tonnes, ...(nameOf[id] ? { name: nameOf[id].name, registry: nameOf[id].registry, country: nameOf[id].country } : {}) })),
     matched_on: rows.reduce((m, r) => ((m[r.matched_on] = (m[r.matched_on] || 0) + 1), m), {}),

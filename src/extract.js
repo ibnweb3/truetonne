@@ -63,7 +63,11 @@ export function vetExtraction(text, raw) {
   const dropped = [];
   const claims = [];
   for (const c of (Array.isArray(raw?.claims) ? raw.claims : []).slice(0, 12)) {
-    const out = { project_id: '', project_name: '', vintage: null, tonnes: null, year: null, quote: String(c.quote || '').slice(0, 400) };
+    if (!c || typeof c !== 'object') continue;
+    const quote = String(c.quote || '').trim();
+    const out = { project_id: '', project_name: '', vintage: null, tonnes: null, year: null, quote: '' };
+    if (quote && text.includes(quote)) out.quote = quote.slice(0, 400);
+    else if (quote) dropped.push('a quoted sentence was not found in your text');
     const id = normalizeProjectId(c.project_id);
     if (id) {
       if (ids.has(id)) out.project_id = id;

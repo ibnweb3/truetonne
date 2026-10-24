@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Check report · TrueTonne</title>
-<meta name="description" content="A TrueTonne check: which claimed carbon-credit tonnes are backed by public registry retirements.">
+<title>Claim report · TrueTonne</title>
+<meta name="description" content="A saved comparison of a carbon-offset claim with named retirement records in the public registry snapshot.">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -12,23 +12,24 @@
 <link rel="stylesheet" href="/style.css">
 </head>
 <body>
+<a class="skip-link" href="#main">Skip to report</a>
 <header class="top">
   <div class="wrap">
     <a class="brand" href="/"><svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="7" fill="var(--accent)"/><path d="M9 16.5l4.5 4.5L23 11.5" fill="none" stroke="var(--accent-ink)" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg>TrueTonne</a>
     <nav class="nav" aria-label="Main">
       <a href="/">Check a claim</a>
       <a href="/company.html">Company lookup</a>
-      <a href="/docs.html" class="hide-sm">Method &amp; data</a>
-      <a href="https://github.com/ibnweb3/truetonne" class="hide-sm">GitHub</a>
+      <a href="/docs.html">Method &amp; data</a>
     </nav>
   </div>
 </header>
 <main class="wrap" id="main">
-  <p class="skeleton" id="loading">Loading report…</p>
+  <p class="skeleton" id="loading" role="status" aria-live="polite">Loading your report…</p>
+  <noscript><style>#loading { display: none; }</style><section class="hero"><h1>JavaScript is needed to display this report</h1><p class="lede">Turn on JavaScript and reload this page. You can still <a href="/docs.html">read how checks work</a>.</p></section></noscript>
 </main>
 <footer class="foot">
   <div class="wrap">
-    <span>TrueTonne checks paperwork, not project quality. Registry data © the registries, compiled by CarbonPlan OffsetsDB.</span>
+    <span>TrueTonne checks registry records, not project quality. Data compiled by CarbonPlan OffsetsDB from public registries.</span>
     <span><a href="/docs.html">Method, data and limits</a></span>
   </div>
 </footer>

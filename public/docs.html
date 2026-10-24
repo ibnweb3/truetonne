@@ -12,63 +12,84 @@
 <link rel="stylesheet" href="/style.css">
 </head>
 <body>
+<a class="skip-link" href="#main">Skip to content</a>
 <header class="top">
   <div class="wrap">
     <a class="brand" href="/"><svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="7" fill="var(--accent)"/><path d="M9 16.5l4.5 4.5L23 11.5" fill="none" stroke="var(--accent-ink)" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg>TrueTonne</a>
     <nav class="nav" aria-label="Main">
       <a href="/">Check a claim</a>
       <a href="/company.html">Company lookup</a>
-      <a href="/docs.html" aria-current="page" class="hide-sm">Method &amp; data</a>
-      <a href="https://github.com/ibnweb3/truetonne" class="hide-sm">GitHub</a>
+      <a href="/docs.html" aria-current="page">Method &amp; data</a>
     </nav>
   </div>
 </header>
 <main class="wrap narrow prose" id="main">
   <section class="hero">
     <h1>Method, data and limits</h1>
-    <p class="lede">What TrueTonne checks, how, and what it cannot tell you. Everything here is reproducible from the public repository.</p>
+    <p class="lede">Understand what a result means before you rely on it. TrueTonne compares carbon-credit claims with a dated copy of public registry records.</p>
   </section>
 
-  <h2>What it checks</h2>
-  <p>A company says it retired some tonnes of carbon credits. TrueTonne asks one narrow question: <b>do public registry records show retirements that name this company, for those projects, vintages and years, in at least those quantities?</b> It checks paperwork. It does not judge whether a project removes any carbon.</p>
+  <div class="note">
+    <b>A match is evidence of a registry record.</b> It does not prove that a company is carbon neutral, that a project delivered its promised climate benefit, or that the same credits have never been claimed elsewhere.
+  </div>
 
-  <h2>Data</h2>
+  <h2>What it checks</h2>
+  <p>A retirement is a registry entry showing that carbon credits have been taken out of circulation. TrueTonne looks for retirements that name the company making a claim, then compares the recorded tonnes with the amount claimed. You can narrow the check to a project, a credit vintage and a retirement year.</p>
+  <p>A credit <b>vintage</b> is the year associated with the credit’s climate benefit. The <b>retirement year</b> is when the credit was taken out of circulation. These can be different years. One tonne means one metric tonne of carbon dioxide equivalent (tCO₂e).</p>
+
+  <h2>How to read a result</h2>
   <ul>
-    <li>CarbonPlan OffsetsDB, a compilation of the Verra, Gold Standard, ACR, CAR and ART registries. Snapshot of 1 June 2026: 495,403 retirements across 11,659 projects.</li>
-    <li>CarbonPlan has paused updates because registry data access changed (<a href="https://github.com/carbonplan/offsets-db-data/issues/174" rel="noopener">offsets-db-data#174</a>). TrueTonne therefore cannot see retirements after the snapshot, and says so when a claim is dated later.</li>
+    <li><b>Quantity matched:</b> matching registry records cover the full stated quantity. Quantities are compared to three decimal places. Review any warnings and the matched project before drawing a conclusion.</li>
+    <li><b>Partly backed:</b> some of the stated quantity has matching records. The report shows the amount without a match.</li>
+    <li><b>No matching records:</b> this snapshot cannot substantiate the claim under the details entered. This alone is not proof of a false claim; names, missing records and the snapshot date can explain a gap.</li>
+    <li><b>Records found:</b> no quantity was entered. Finding retirement records gives you a recorded total, but there is no claimed amount to compare it with.</li>
+    <li><b>Choose a project:</b> several projects match the name you entered. Review or change the inputs using the registry ID for the intended project.</li>
+  </ul>
+
+  <h2 id="coverage">Data and coverage</h2>
+  <ul>
+    <li>CarbonPlan OffsetsDB, covering Verra, Gold Standard, American Carbon Registry, Climate Action Reserve, ART TREES, Cercarbono and Isometric. Snapshot of 1 June 2026: 495,403 retirements across 11,659 projects.</li>
+    <li>This is a historical snapshot, not a live registry feed. It cannot establish what happened after 1 June 2026, and 2026 is only partially covered. CarbonPlan documents changes to registry data access in <a href="https://github.com/carbonplan/offsets-db-data/issues/174" rel="noopener">its data-access update</a>.</li>
     <li>CarbonPlan claims no copyright in the data. The registries may claim rights in their own records; this site shows short extracts with a link to the registry.</li>
   </ul>
 
   <h2>Matching</h2>
   <ol>
-    <li><b>Project.</b> By registry ID (VCS562, GS1234, CAR1480 and similar forms), or by name through full-text search. Name matches are flagged so you can confirm them.</li>
-    <li><b>Claimant.</b> A retirement counts only if the beneficiary, account or note field names the claimant (legal suffixes such as Inc or AB are ignored). The snapshot has <b>no serial numbers</b>, so matching is by project, vintage, retirement year and name, not by individual credit.</li>
+    <li><b>Project.</b> By registry ID (VCS562, GS1234, CAR1480 and similar forms), or by name through full-text search. If several projects match a name, the check asks you to use a specific project ID instead of choosing one for you.</li>
+    <li><b>Company name.</b> A retirement counts only if the beneficiary, retiring account or retirement note names the company (legal suffixes such as Inc or AB are ignored). An account may belong to an intermediary acting for a client; a name match alone does not establish ownership of the benefit. The snapshot has <b>no credit serial numbers</b>, so matching is by project, vintage, retirement year and name, not by individual credit.</li>
     <li><b>Allocation.</b> One retired tonne can back one claim within a report. If two claims in the same report match the same retirement, the second is shown as already counted.</li>
     <li><b>Flags.</b> Retired more than issued; claimant is the account that retired on behalf of a client; claim dated after the snapshot; retirement matched only through a free-text note.</li>
   </ol>
 
   <h2>The AI step</h2>
-  <p>Pasted text goes to Llama 3.3 70B on Cloudflare Workers AI, which only extracts claims into a fixed JSON shape. Any project ID, project name, tonnage or year that does not appear literally in your text is discarded and listed back to you. You review the claims before anything is checked. The model decides nothing about the verdict.</p>
+  <p>When you choose to read a pasted statement, its text is sent to Cloudflare Workers AI to extract the company name and claim details. Values are checked against the source text; unsupported project IDs, project names, quantities and years are discarded and shown to you. This does not guarantee the model attached every value to the right claim. Review and correct the details before running a check.</p>
+  <p>You can enter claims yourself without using AI. The comparison with registry records follows the same rules either way.</p>
+
+  <h2>Information you submit</h2>
+  <p>Running a check saves a report containing the company, claim details, matching records and any source text included with the check. Anyone with the report link can read and download it. Use public claims, and leave out confidential or personal information. Company lookup searches do not create a report.</p>
 
   <h2>The on-chain record</h2>
-  <p>Every report is canonical JSON hashed with SHA-256. You can re-hash it in your browser on the report page. Recording a report on Base Sepolia (a test network) calls <span class="mono">TonneLedger</span>, which keeps a cap in milli-tonnes per retirement row. The first claimant to record a row holds those tonnes; a later claimant asking for more than remains is refused and the contract logs a <span class="mono">DoubleClaimBlocked</span> event. Claimants are stored as the hash of their normalized name, not the name.</p>
-  <p>Only the server's attester key can write to the contract. This is a test-network demonstration of the mechanism, not a production registry.</p>
+  <p>Recording is optional and takes place on Base Sepolia, a test network. It stores a fingerprint of the report and reserves the matched tonnes within the TrueTonne contract. If another company has already reserved those tonnes there, the contract blocks the overlapping allocation. A report can still be recorded even when some of its allocations are blocked; read the transaction result.</p>
+  <p>The record supports up to 80 retirement rows per report. Any rows beyond that limit are not reserved on-chain. It does not transfer carbon credits, certify a claim or update an official registry. Only reports recorded in this contract participate in this check for overlapping allocations.</p>
+  <p>For technical verification, reports use canonical JSON with a SHA-256 fingerprint that can be recalculated in your browser. The <span class="mono">TonneLedger</span> contract stores normalized company-name hashes and milli-tonne quantities. Company names and source statements remain readable in the saved report. Only the service’s authorized signer can write to the contract.</p>
 
   <h2>Limits you should know</h2>
   <ul>
     <li>A retirement naming a company is evidence the credits were retired, not that the company's footprint is offset, and not that the project is good.</li>
     <li>Registries record beneficiaries inconsistently. Many retirements name nobody, so an honest claim can show a gap.</li>
-    <li>The double-claim block only works between reports recorded on this contract. It does not see claims made anywhere else.</li>
-    <li>Name matching can confuse companies that share a name. The report shows every matched row so you can check.</li>
+    <li>Name matching can confuse companies that share a name. Add other names only when they belong to the company you are checking.</li>
+    <li>A unique project-name match can still be the wrong project. A registry project ID is more precise; inspect the selected project before relying on the result.</li>
+    <li>Searches are limited to 5,000 matching records per name variant. A warning identifies results that may have been cut short. Company totals and breakdowns can therefore be partial.</li>
+    <li>The report page lists up to 60 backing retirement records per claim. The downloadable JSON also contains the complete allocation used by the calculation.</li>
   </ul>
 
   <h2>Code</h2>
-  <p>Open source at <a href="https://github.com/ibnweb3/truetonne" rel="noopener">github.com/ibnweb3/truetonne</a>. The contract address is linked at the bottom of every report.</p>
+  <p>Open source at <a href="https://github.com/ibnweb3/truetonne" rel="noopener">github.com/ibnweb3/truetonne</a>. Reports link to the test-network contract when recording is available.</p>
 </main>
 
 <footer class="foot">
   <div class="wrap">
-    <span>TrueTonne checks paperwork, not project quality. Registry data © the registries, compiled by CarbonPlan OffsetsDB.</span>
+    <span>TrueTonne checks registry records, not project quality. Data compiled by CarbonPlan OffsetsDB from public registries.</span>
     <span><a href="/docs.html">Method, data and limits</a></span>
   </div>
 </footer>

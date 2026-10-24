@@ -1,7 +1,8 @@
 // Minimal D1 interface over node:sqlite, pointed at the local copy of the snapshot (data/local.sqlite).
 import { DatabaseSync } from 'node:sqlite';
+import { fileURLToPath } from 'node:url';
 
-export function openLocal(path = new URL('../data/local.sqlite', import.meta.url).pathname.replace(/^\/(\w:)/, '$1')) {
+export function openLocal(path = fileURLToPath(new URL('../data/local.sqlite', import.meta.url))) {
   const db = new DatabaseSync(path);
   const wrap = (sql, args = []) => ({
     bind: (...a) => wrap(sql, a),

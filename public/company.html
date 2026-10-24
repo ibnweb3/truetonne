@@ -12,41 +12,45 @@
 <link rel="stylesheet" href="/style.css">
 </head>
 <body>
+<a class="skip-link" href="#main">Skip to content</a>
 <header class="top">
   <div class="wrap">
     <a class="brand" href="/"><svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="7" fill="var(--accent)"/><path d="M9 16.5l4.5 4.5L23 11.5" fill="none" stroke="var(--accent-ink)" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg>TrueTonne</a>
     <nav class="nav" aria-label="Main">
       <a href="/">Check a claim</a>
       <a href="/company.html" aria-current="page">Company lookup</a>
-      <a href="/docs.html" class="hide-sm">Method &amp; data</a>
-      <a href="https://github.com/ibnweb3/truetonne" class="hide-sm">GitHub</a>
+      <a href="/docs.html">Method &amp; data</a>
     </nav>
   </div>
 </header>
 <main class="wrap" id="main">
   <section class="hero">
-    <h1>What has this company retired?</h1>
-    <p class="lede">Look up every retirement in the registry snapshot that names a company, by year and by project. This is a profile, not a verdict: use the claim check to test a specific statement.</p>
+    <h1>Find a company in the registry records</h1>
+    <p class="lede">Search carbon-credit retirements that name a company, then explore the years and projects involved. The results show name matches, which can include credits retired for a client.</p>
   </section>
   <section class="section card card-pad" aria-labelledby="lookup-h">
     <h2 id="lookup-h" class="sr-only">Company lookup</h2>
     <form id="lookup" novalidate>
       <div class="row2">
         <div class="field"><label for="name">Company name</label>
-          <input id="name" name="name" required minlength="3" maxlength="120" autocomplete="organization" spellcheck="false" placeholder="e.g. Microsoft"></div>
-        <div class="field"><label for="alias">Other names <span class="hint">(optional, comma separated)</span></label>
-          <input id="alias" name="alias" maxlength="300" autocomplete="off" spellcheck="false" placeholder="e.g. Microsoft Corporation"></div>
+          <input id="name" name="name" required minlength="3" maxlength="120" autocomplete="organization" spellcheck="false" aria-describedby="name-help">
+          <p class="small hint" id="name-help" style="margin-top:6px">Use the company’s registered or trading name.</p></div>
+        <div class="field"><label for="alias">Other names <span class="hint">(optional)</span></label>
+          <textarea id="alias" name="alias" maxlength="486" rows="2" autocomplete="off" spellcheck="false" aria-describedby="alias-help" style="min-height:76px"></textarea>
+          <p class="small hint" id="alias-help" style="margin-top:6px">One name per line, up to four. Use only names for the same organisation.</p></div>
       </div>
-      <div class="actions"><button class="btn btn-primary" type="submit" id="go">Look up</button></div>
+      <div class="actions"><button class="btn btn-primary" type="submit" id="go">Search records</button></div>
       <div class="note bad" id="msg" role="alert" hidden style="margin-top:14px"></div>
     </form>
   </section>
-  <div id="result" aria-live="polite"></div>
+  <p id="lookup-status" class="hint" role="status" aria-live="polite" style="margin-top:16px"></p>
+  <div id="result"></div>
+  <noscript><p class="note warn">Company search needs JavaScript. Enable it and reload this page, or <a href="/docs.html">read about the dataset and matching method</a>.</p></noscript>
 </main>
 
 <footer class="foot">
   <div class="wrap">
-    <span>TrueTonne checks paperwork, not project quality. Registry data © the registries, compiled by CarbonPlan OffsetsDB.</span>
+    <span>TrueTonne checks registry records, not project quality. Data compiled by CarbonPlan OffsetsDB from public registries.</span>
     <span><a href="/docs.html">Method, data and limits</a></span>
   </div>
 </footer>
